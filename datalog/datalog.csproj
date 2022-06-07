@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>netcoreapp3.1</TargetFramework>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Antlr4.Runtime.Standard" Version="4.9.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Include="..\def.cs">
+        <Link>def.cs</Link>
+      </Compile>
+      <Compile Include="..\out\datalogBaseVisitor.cs">
+        <Link>datalogBaseVisitor.cs</Link>
+      </Compile>
+      <Compile Include="..\out\datalogLexer.cs">
+        <Link>datalogLexer.cs</Link>
+      </Compile>
+      <Compile Include="..\out\datalogParser.cs">
+        <Link>datalogParser.cs</Link>
+      </Compile>
+      <Compile Include="..\out\datalogVisitor.cs">
+        <Link>datalogVisitor.cs</Link>
+      </Compile>
+      <Compile Remove="Util.cs" />
+    </ItemGroup>
+
+</Project>
