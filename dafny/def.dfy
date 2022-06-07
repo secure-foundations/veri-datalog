@@ -83,6 +83,58 @@ predicate valid_query(prog:Program, facts:set<Fact>, query:Rule)
   exists proof :: valid_proof(prog, facts, query, proof)
 }
 
+////////////////////////////////////////
+// Model-Theoretic Spec
+////////////////////////////////////////
+
+// Needed below to satisfy Dafny's type checker
+function clause_to_fact(c:Clause) : Fact
+  requires c.is_ground()
+{
+  c
+}
+
+function base_facts(prog:Program) : set<Fact>
+{
+  set r | r in prog && |r.body| == 0 && r.head.is_ground() :: clause_to_fact(r.head)
+}
+
+type Interpretation = set<Fact>
+
+predicate substitution_complete_for_rule(sub:Substitution, r:Rule)
+{
+  && r.head.substitution_complete(sub)
+  && (forall i :: 0 <= i < |r.body| ==> r.body[i].substitution_complete(sub))
+}
+
+function ground_rule_body(sub:Substitution, r:Rule) : set<Fact>
+  requires substitution_complete_for_rule(sub, r)
+{
+  set clause | clause in r.body :: clause.make_fact(sub)
+}
+
+predicate rule_true_in_interp(interp:Interpretation, r:Rule)
+{
+  forall sub ::
+    // substitution must include all of the variables in the rule
+    substitution_complete_for_rule(sub, r) 
+    // facts produced from the body are in the interpretation
+    && ground_rule_body(sub, r) <= interp
+    // then the head must be in the interpretation as well
+    ==> r.head.make_fact(sub) in interp
+}
+
+predicate is_model(interp:Interpretation, prog:Program)
+{
+  && base_facts(prog) <= interp
+  && (forall i :: 0 <= i < |prog| ==> rule_true_in_interp(interp, prog[i]))
+}
+
+predicate is_min_model(interp:Interpretation, prog:Program)
+{
+  && is_model(interp, prog)
+  && (forall interp' :: interp != interp && is_model(interp', prog) ==> |interp| <= |interp'|)
+}
 
 ////////////////////////////////////////
 // (Verified) Implementation
@@ -321,7 +373,8 @@ method solve(prog:Program) returns (kb:KnowledgeBase)
   kb := [];
   LemmaCardinalityOfEmptySetIs0(kb);
   LemmaNoDuplicatesCardinalityOfSet(kb);
-  while true 
+  var count := 4294967295;  // Cheap hack to avoid proving termination
+  while count > 0 
     invariant HasNoDuplicates(kb)
   {
     var old_kb := kb;
@@ -329,6 +382,7 @@ method solve(prog:Program) returns (kb:KnowledgeBase)
     if |kb| == |old_kb| {
       return kb;
     }
+    count := count - 1;
   }
 }
 
