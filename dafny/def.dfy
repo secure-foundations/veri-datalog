@@ -529,6 +529,7 @@ ghost method merge_proofs(prog:Program, initial_facts:set<Fact>, proof:Proof, pr
   proof' := proof;
   LemmaCardinalityOfEmptySetIs0(new_kb[..0]);
   for i := 0 to |proof_steps|
+    invariant First(proof').facts == initial_facts;
     invariant valid_partial_proof(prog, initial_facts, proof')
     invariant |proof'| > 0 ==> Last(proof').facts == ToSet(old_kb) + ToSet(new_kb[..i]);
   {
