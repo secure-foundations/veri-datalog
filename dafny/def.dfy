@@ -190,8 +190,11 @@ method substitute(c:Clause, sub:Substitution) returns (c':Clause)
 }
 
 method unify_terms(terms:seq<Term>, consts:seq<ConstTerm>) returns (s:Option<Substitution>)
-  ensures s.Some? ==> 
-    (forall j :: 0 <= j < |terms| ==> (terms[j].Var? ==> terms[j] in s.value))
+  ensures s.Some? ==> |terms| == |consts| && 
+    (forall j :: 0 <= j < |terms| ==> 
+      match terms[j]
+        case Var(_) => terms[j] in s.value && s.value[terms[j]] == consts[j]
+        case Const(_) => terms[j] == consts[j])
 {
   if |terms| != |consts| {
     s := None;
@@ -200,7 +203,7 @@ method unify_terms(terms:seq<Term>, consts:seq<ConstTerm>) returns (s:Option<Sub
   } else {
     var sub:Substitution := map[];
     for i := 0 to |terms| 
-      invariant forall j :: 0 <= j < i ==> (terms[j].Var? ==> terms[j] in sub)
+      invariant forall j :: 0 <= j < i ==> (terms[j].Var? ==> terms[j] in sub && sub[terms[j]] == consts[j])
     {
       var term := terms[i];
       var cons := consts[i];
@@ -223,15 +226,14 @@ method unify_terms(terms:seq<Term>, consts:seq<ConstTerm>) returns (s:Option<Sub
 }
 
 method unify(c:Clause, fact:Fact) returns (s:Option<Substitution>)
-  ensures s.Some? ==> c.substitution_complete(s.value)  
+  ensures s.Some? ==> c.substitution_complete(s.value) && c.make_fact(s.value) == fact
 {
   if c.name != fact.name {
     return None;
   } else { 
-    s := unify_terms(c.terms, fact.terms);
+    s := unify_terms(c.terms, fact.terms);   
   }
 }
-
 
 type KnowledgeBase = seq<Fact>
 
@@ -240,29 +242,42 @@ predicate subs_complete_all(c:Clause, subs:seq<Substitution>)
   forall m :: 0 <= m < |subs| ==> c.substitution_complete(subs[m])
 }
 
+predicate facts_complete_all(c:Clause, subs:seq<Substitution>, kb:KnowledgeBase)
+  requires subs_complete_all(c, subs)
+{
+  forall m :: 0 <= m < |subs| ==> c.make_fact(subs[m]) in kb
+}
+
 method eval_clause(kb:KnowledgeBase, c:Clause, subs:seq<Substitution>) returns (subs':seq<Substitution>)
-  ensures forall i :: 0 <= i < |subs'| ==> c.substitution_complete(subs'[i])
+  ensures forall i :: 0 <= i < |subs'| ==> c.substitution_complete(subs'[i]) && c.make_fact(subs'[i]) in kb
   ensures forall c':Clause :: subs_complete_all(c', subs) ==> subs_complete_all(c', subs')
+  ensures forall c':Clause :: subs_complete_all(c', subs) && facts_complete_all(c', subs, kb) 
+                           ==> subs_complete_all(c', subs') && facts_complete_all(c', subs', kb) 
 {
   subs' := [];
   for i := 0 to |subs| 
-    invariant forall j :: 0 <= j < |subs'| ==> c.substitution_complete(subs'[j])
+    invariant forall j :: 0 <= j < |subs'| ==> c.substitution_complete(subs'[j]) && c.make_fact(subs'[j]) in kb
     invariant forall c':Clause :: subs_complete_all(c', subs) ==> subs_complete_all(c', subs')
+    invariant forall c':Clause :: subs_complete_all(c', subs) && facts_complete_all(c', subs, kb) 
+                              ==> subs_complete_all(c', subs') && facts_complete_all(c', subs', kb) 
   {
     var grounded := substitute(c, subs[i]);
     //print "\t\t\tgrounded ", c, " to get ", grounded, "\n";
     for j := 0 to |kb| 
-      invariant forall k :: 0 <= k < |subs'| ==> c.substitution_complete(subs'[k])
+      invariant forall k :: 0 <= k < |subs'| ==> c.substitution_complete(subs'[k]) && c.make_fact(subs'[k]) in kb
       invariant forall c':Clause :: subs_complete_all(c', subs) ==> subs_complete_all(c', subs')
+      invariant forall c':Clause :: subs_complete_all(c', subs) && facts_complete_all(c', subs, kb) 
+                              ==> subs_complete_all(c', subs') && facts_complete_all(c', subs', kb) 
     {
       var extension := unify(grounded, kb[j]);
       match extension {
         case None =>
         case Some(sub) =>
           assert grounded.substitution_complete(sub);
+          assert grounded.make_fact(sub) == kb[j];
           //print "\t\tUnified ", c, " with ", kb[j], " and got ", sub, "\n";
           ghost var old_subs' := subs';
-          subs' := subs' + [subs[i] + sub];
+          subs' := subs' + [sub + subs[i]];
       }
     }
   }
@@ -270,15 +285,29 @@ method eval_clause(kb:KnowledgeBase, c:Clause, subs:seq<Substitution>) returns (
 
 method eval_clauses(kb:KnowledgeBase, clauses:seq<Clause>) returns (subs:seq<Substitution>)
   ensures forall k, j :: 0 <= k < |subs| && 0 <= j < |clauses| ==> 
-                 clauses[j].substitution_complete(subs[k]);
+                 clauses[j].substitution_complete(subs[k])
+              && clauses[j].make_fact(subs[k]) in kb;
 {
   subs := [map[]];
   for i := 0 to |clauses| 
-    invariant forall j :: 0 <= j < i ==>  subs_complete_all(clauses[j], subs)
+    invariant forall j :: 0 <= j < i 
+      ==> subs_complete_all(clauses[j], subs)
+      && facts_complete_all(clauses[j], subs, kb)
   {
     var old_subs := subs;
     subs := eval_clause(kb, clauses[i], subs);
   }
+}
+
+predicate valid_partial_proof(prog:Program, facts:set<Fact>, query:Rule, proof:Proof)
+{
+  && |proof| > 0
+  // We start with the base set of facts
+  && First(proof).facts == facts
+  // Each proof step is valid and uses a rule from the program
+  && (forall i :: 0 <= i < |proof| ==> proof[i].valid() && proof[i].rule in prog)
+  // Each proof step extends the set of facts by one
+  && (forall i :: 0 <= i < |proof| - 1 ==> proof[i+1].facts == proof[i].facts + { proof[i].new_fact() } )
 }
 
 method eval_rule(kb:KnowledgeBase, r:Rule) returns (kb':KnowledgeBase)
