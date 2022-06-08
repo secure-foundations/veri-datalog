@@ -425,8 +425,7 @@ lemma lemma_valid_proof_step(step:ProofStep)
                  step.rule.body[j].substitution_complete(step.sub)
               && step.rule.body[j].make_fact(step.sub) in step.facts
   ensures step.valid()
-{
-  assume false;
+{  
 }
 
 method eval_rule(kb:KnowledgeBase, r:Rule) returns (kb':KnowledgeBase, ghost proof:Proof)
@@ -523,13 +522,27 @@ ghost method merge_proofs(prog:Program, initial_facts:set<Fact>, proof:Proof, pr
   requires forall j :: 0 <= j < |proof_steps| ==> 
               proof_steps[j].valid() && proof_steps[j].rule in prog && proof_steps[j].facts == ToSet(old_kb)
   requires forall j :: 0 <= j < |new_kb| ==>  new_kb[j] == proof_steps[j].rule.head.make_fact(proof_steps[j].sub)
-  ensures |proof'| > |proof|
-  ensures Last(proof').facts == ToSet(old_kb) + ToSet(new_kb)
+  //ensures |proof'| > |proof|
+  ensures |proof'| > 0 ==> Last(proof').facts == ToSet(old_kb) + ToSet(new_kb)
   ensures valid_partial_proof(prog, initial_facts, proof')
 {
+  proof' := proof;
+  LemmaCardinalityOfEmptySetIs0(new_kb[..0]);
+  for i := 0 to |proof_steps|
+    invariant valid_partial_proof(prog, initial_facts, proof')
+    invariant |proof'| > 0 ==> Last(proof').facts == ToSet(old_kb) + ToSet(new_kb[..i]);
+  {
+    var new_step := ProofStep(proof_steps[i].sub, proof_steps[i].rule, proof_steps[i].facts + { new_kb[i] });
+    assert new_step.valid();
+    proof' := proof' + [new_step];
+    assert First(proof').facts == initial_facts;
+    assert forall i :: 0 <= i < |proof'| ==> proof'[i].valid() && proof'[i].rule in prog;
+    assert forall i :: 0 <= i < |proof'| - 1 ==> proof'[i+1].facts == proof'[i].facts + { proof'[i].new_fact() };
+
+  }
   assume false;
 }
-
+/*
 method immediate_consequence(prog:Program, kb:KnowledgeBase, ghost initial_facts:set<Fact>, ghost proof:Proof)
   returns (kb':KnowledgeBase, ghost proof':Proof)
   requires valid_program(prog)
@@ -717,4 +730,4 @@ method Main() {
   var q := Rule(Clause("query", [Var("W")]), [Clause("connected", [Const("x"), Var("W")])]);
   run(prog, q);
 }
-*/
+*/*/
