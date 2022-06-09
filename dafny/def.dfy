@@ -2,9 +2,10 @@
 include "std-lib/src/Collections/Sequences/Seq.dfy"
 // Used by impl
 include "std-lib/src/Wrappers.dfy"
-include "std-lib/src/Collections/Sets/Sets.dfy"
+include "std-lib/src/Math.dfy"
+//include "std-lib/src/Collections/Sets/Sets.dfy"
 import opened Seq
-import opened Sets
+//import opened Sets
 import opened Wrappers
 
 ////////////////////////////////////////
@@ -44,7 +45,7 @@ datatype Rule = Rule(head:Clause, body:seq<Clause>)
 type Program = seq<Rule>
 
 
-datatype ProofStep = ProofStep(sub:Substitution, rule:Rule, facts:set<Fact>)
+datatype ProofStep = ProofStep(sub:Substitution, rule:Rule, facts:seq<Fact>)
 {
   predicate valid() {
     // Substitution has a mapping for each variable in the head
@@ -66,22 +67,22 @@ datatype ProofStep = ProofStep(sub:Substitution, rule:Rule, facts:set<Fact>)
 
 type Proof = seq<ProofStep> 
 
-predicate valid_proof(prog:Program, facts:set<Fact>, query:Rule, proof:Proof)
+predicate valid_proof(prog:Program, query:Rule, proof:Proof)
 {
   && |proof| > 0
-  // We start with the base set of facts
-  && First(proof).facts == facts
+  // We start with an empty set of facts
+  && First(proof).facts == []
   // Each proof step is valid and uses a rule from the program
   && (forall i :: 0 <= i < |proof| ==> proof[i].valid() && proof[i].rule in prog)
   // Each proof step extends the set of facts by one
-  && (forall i :: 0 <= i < |proof| - 1 ==> proof[i+1].facts == proof[i].facts + { proof[i].new_fact() } )
+  && (forall i :: 0 <= i < |proof| - 1 ==> proof[i+1].facts == proof[i].facts + [ proof[i].new_fact() ] )
   // Last proof step shows the query is valid
   && Last(proof).rule == query
 }
 
-predicate valid_query(prog:Program, facts:set<Fact>, query:Rule)
+predicate valid_query(prog:Program, query:Rule)
 {
-  exists proof :: valid_proof(prog, facts, query, proof)
+  exists proof :: valid_proof(prog, query, proof)
 }
 
 ////////////////////////////////////////
@@ -191,12 +192,7 @@ function clause_vars(c:Clause) : set<VarTerm>
 {
   terms_vars(c.terms)
 }
-/*
-function clauses_vars(clauses:seq<Clause>) : set<VarTerm>
-{
-  set i | 0 <= i < |clauses| && clauses[i].Var? :: clauses
-}
-*/
+
 method substitute(c:Clause, sub:Substitution) returns (c':Clause)
   ensures c.substitution_complete(sub) ==> c'.is_ground()
   ensures forall sub' :: c'.substitution_complete(sub') ==>
@@ -408,15 +404,15 @@ method eval_clauses(kb:KnowledgeBase, clauses:seq<Clause>) returns (subs:seq<Sub
   }
 }
 
-predicate valid_partial_proof(prog:Program, facts:set<Fact>, proof:Proof)
+predicate valid_partial_proof(prog:Program, proof:Proof)
 {
   |proof| > 0 ==>
   // We start with the base set of facts
-  && First(proof).facts == facts
+  && First(proof).facts == []
   // Each proof step is valid and uses a rule from the program
   && (forall i :: 0 <= i < |proof| ==> proof[i].valid() && proof[i].rule in prog)
   // Each proof step extends the set of facts by one
-  && (forall i :: 0 <= i < |proof| - 1 ==> proof[i+1].facts == proof[i].facts + { proof[i].new_fact() } )
+  && (forall i :: 0 <= i < |proof| - 1 ==> proof[i+1].facts == proof[i].facts + [ proof[i].new_fact() ] )
 }
 
 lemma lemma_valid_proof_step(step:ProofStep)
@@ -428,41 +424,49 @@ lemma lemma_valid_proof_step(step:ProofStep)
 {  
 }
 
-method eval_rule(kb:KnowledgeBase, r:Rule) returns (kb':KnowledgeBase, ghost proof:Proof)
+method eval_rule(prog:Program, kb:KnowledgeBase, r:Rule, ghost proof:Proof) returns (kb':KnowledgeBase, ghost proof':Proof)
   requires valid_rule(r)
-  ensures |proof| == |kb'|
-  ensures forall j :: 0 <= j < |proof| ==> 
-              proof[j].valid() && proof[j].rule == r && proof[j].facts == ToSet(kb)
-  ensures forall j :: 0 <= j < |kb'| ==>  kb'[j] == proof[j].rule.head.make_fact(proof[j].sub)
+  requires r in prog
+  requires valid_partial_proof(prog, proof)
+  requires |kb| > 0 && |proof| > 0 
+  requires Last(kb) == Last(proof).new_fact()
+  requires Last(proof).facts == DropLast(kb)
+  ensures valid_partial_proof(prog, proof')
+  ensures |kb'| > 0 && |proof'| > 0 
+  ensures Last(kb') == Last(proof').new_fact()
+  ensures Last(proof').facts == DropLast(kb')
 {
-  proof := [];
   //print "Evaluating rule: ", r, "\n";
   if |r.body| == 0 {
-    return [r.head], [ProofStep(map[], r, ToSet(kb))];
+    kb' := kb + [r.head];
+    proof' := proof + [ProofStep(map[], r, kb)];
   }
 
-  kb' := [];
-
+  kb' := kb;
+  proof' := proof;
   var subs := eval_clauses(kb, r.body);
   //print "\teval_clauses returned: ", subs, "\n";
   for i := 0 to |subs| 
-    invariant |proof| == |kb'| == i
-    invariant forall j :: 0 <= j < |proof| ==> 
-              proof[j].valid() && proof[j].rule == r && proof[j].facts == ToSet(kb)
-    invariant forall j :: 0 <= j < i ==>  kb'[j] == proof[j].rule.head.make_fact(proof[j].sub)       
+    invariant valid_partial_proof(prog, proof')
+    invariant |kb'| > 0 && |proof'| > 0
+    invariant Last(kb') == Last(proof').new_fact()
+    invariant Last(proof').facts == DropLast(kb')
+    invariant kb <= kb';
   {
-    var new_fact := substitute(r.head, subs[i]);
+    ghost var step := ProofStep(subs[i], r, kb');
+    var new_fact := substitute(r.head, subs[i]);    
     //print "\tFound a new fact: ", new_fact, "\n";
-    ghost var step := ProofStep(subs[i], r, ToSet(kb));  
-    assert forall f :: f in kb ==> f in ToSet(kb) by { reveal ToSet(); }    
+    ghost var old_kb' := kb';
+    kb' := kb' + [new_fact];    
+          
     lemma_valid_proof_step(step);
     assert step.valid();
-    proof := proof + [step];
-    kb' := kb' + [new_fact];
+    proof' := proof' + [step];  
   }
 }
 
 // TODO: Migrate this to std-lib
+/*
 method LemmaHasNoDuplicatesExtend<T>(s:seq<T>, elt:T)
   requires HasNoDuplicates(s)
   requires elt !in ToSet(s)
@@ -497,23 +501,16 @@ method SetToSeq<T>(s:set<T>) returns (q:seq<T>)
   assert ToSet(q) == s;
   LemmaCardinalityOfSetNoDuplicates(q);
 }
-
+*/
+/*
+// TODO: Someday we'll want something more efficient for representing knowledge
 method merge(kb0:KnowledgeBase, kb1:KnowledgeBase) returns (kb':KnowledgeBase)
-  requires HasNoDuplicates(kb0)
-  ensures HasNoDuplicates(kb')
-  ensures |kb'| >= |kb0|
-  ensures ToSet(kb') == ToSet(kb0) + ToSet(kb1)
+  ensures kb' == kb0 + kb1
 {
-  var s0 := ToSet(kb0);
-  var s1 := ToSet(kb1);
-  LemmaCardinalityOfSetNoDuplicates(kb0);
-  var union := s0 + s1;
-  assert |s0| == |kb0|;
-  LemmaUnionSize(s0, s1);
-  assert |union| >= |s0|;
-  kb' := SetToSeq(union);
+  kb' := kb0 + kb1;
 }
-
+*/
+/*
 ghost method merge_proofs(prog:Program, initial_facts:set<Fact>, proof:Proof, proof_steps:Proof, old_kb:KnowledgeBase, new_kb:KnowledgeBase) 
   returns (proof':Proof)
   requires |proof| == 0 ==> initial_facts == ToSet(old_kb)
@@ -558,49 +555,203 @@ ghost method merge_proofs(prog:Program, initial_facts:set<Fact>, proof:Proof, pr
   }
   assume false;
 }
+*/
 /*
-method immediate_consequence(prog:Program, kb:KnowledgeBase, ghost initial_facts:set<Fact>, ghost proof:Proof)
+ghost method merge_proofs(prog:Program, proof:Proof, proof_steps:Proof, old_kb:KnowledgeBase, new_kb:KnowledgeBase) 
+  returns (proof':Proof)
+  requires valid_partial_proof(prog, proof)
+  requires |proof| == 0 ==> old_kb == []
+  requires |proof| > 0 ==> Last(proof).facts == old_kb;
+  requires |proof_steps| == |new_kb|
+  requires forall j :: 0 <= j < |proof_steps| ==> 
+              proof_steps[j].valid() && proof_steps[j].rule in prog && proof_steps[j].facts == old_kb
+  requires forall j :: 0 <= j < |new_kb| ==>  new_kb[j] == proof_steps[j].rule.head.make_fact(proof_steps[j].sub)
+  //ensures |proof'| > |proof|
+  ensures |proof'| > 0 ==> Last(proof').facts == old_kb + new_kb
+  ensures valid_partial_proof(prog, proof')
+{
+  proof' := proof;
+
+  if |proof_steps| == 0 {
+    return;
+  }
+
+  if |proof| == 0 {    
+    var original_step := ProofStep(proof_steps[0].sub, proof_steps[0].rule, old_kb);
+    proof' := [original_step];
+  }
+
+  for i := 0 to |proof_steps|
+    invariant |proof'| >= |proof| + i
+    invariant |proof'| > 0    
+    invariant valid_partial_proof(prog, proof')
+    invariant Last(proof').facts == old_kb + new_kb[..Math.Max(0,i-1)];
+  {
+    var new_step := ProofStep(proof_steps[i].sub, proof_steps[i].rule, Last(proof').facts + [Last(proof').new_fact()]);
+    //var new_step := ProofStep(proof_steps[i].sub, proof_steps[i].rule, Last(proof').facts + [new_kb[i]]);
+    /*
+    forall clause | clause in new_step.rule.body
+      ensures clause.substitution_complete(new_step.sub)
+           && clause.make_fact(new_step.sub) in Last(proof').facts + [new_kb[i]]
+    {
+
+    }
+    */
+
+    assert new_step.valid();
+    ghost var old_proof := proof';
+    proof' := proof' + [new_step];
+    /*
+    assert First(proof').facts == [];
+    assert (forall i :: 0 <= i < |proof'| ==> proof'[i].valid() && proof'[i].rule in prog);
+*/
+    calc {
+      Last(proof').facts;
+      new_step.facts;
+      Last(old_proof).facts + [Last(old_proof).new_fact()];
+      old_kb + new_kb[..Math.Max(0,i-1)] + [Last(old_proof).new_fact()];
+        { assert Last(old_proof).new_fact() == Last(new_kb[..Math.Max(0,i)]);
+          assert new_kb[..Math.Max(0,i-1)] + [Last(old_proof).new_fact()] == new_kb[..Math.Max(0,i)]; }
+      old_kb + new_kb[..Math.Max(0,i)];
+    }
+  
+  /*
+    forall j | 0 <= j < |proof'| - 1 
+      ensures proof'[j+1].facts == proof'[j].facts + [ proof'[j].new_fact() ]
+    {
+      if j < |proof'| - 2 {
+      } else {
+        assert proof'[j+1] == new_step;
+        calc {
+          proof'[j+1].facts;
+          Last(old_proof).facts + [new_kb[i]];
+            calc {
+              new_kb[i];
+              proof_steps[i].rule.head.make_fact(proof_steps[i].sub);
+              new_step.rule.head.make_fact(new_step.sub);
+
+              proof'[j].rule.head.make_fact(proof'[j].sub);
+              proof'[j].new_fact();
+            }
+          Last(old_proof).facts + [ proof'[j].new_fact() ];
+        }
+        assume false;
+      }
+    }
+    */
+    /*
+    assert forall i :: 0 <= i < |proof'| ==> proof'[i].valid() && proof'[i].rule in prog;
+    forall j | 0 <= j < |proof'| - 1 
+      ensures proof'[j+1].facts == proof'[j].facts + { proof'[j].new_fact() }
+    {
+      if j < |old_proof| - 1 {
+      } else {
+        assert proof'[j+1].facts == proof_steps[i].facts + { new_kb[i] };
+        assert new_kb[i] == proof_steps[i].rule.head.make_fact(proof_steps[i].sub); //proof'[j].new_fact();
+      }
+    }
+    assert forall i :: 0 <= i < |proof'| - 1 ==> proof'[i+1].facts == proof'[i].facts + { proof'[i].new_fact() };
+  */
+  } 
+  assume false;
+}
+*/
+/*
+predicate rule_is_fact(r:Rule) {
+  |r.body| == 0 && r.head.is_ground()
+}
+
+ghost method merge_proofs(prog:Program, proof:Proof, proof_steps:Proof) 
+  returns (proof':Proof)
+  requires |proof| == 0 && |proof_steps| > 0 ==> rule_is_fact(proof_steps[0].rule);
+  requires valid_partial_proof(prog, proof)
+  requires forall j :: 0 <= j < |proof_steps| ==> 
+              proof_steps[j].valid() && proof_steps[j].rule in prog  
+  ensures valid_partial_proof(prog, proof')
+{
+  proof' := proof;
+
+  if |proof_steps| == 0 {
+    return;
+  }
+
+  if |proof| == 0 {    
+    var original_step := ProofStep(proof_steps[0].sub, proof_steps[0].rule, []);
+    assert original_step.rule.head.substitution_complete(original_step.sub);   
+    proof' := [original_step];
+  }
+
+  for i := 0 to |proof_steps|
+    invariant |proof'| >= |proof| + i
+    invariant |proof'| > 0    
+    invariant valid_partial_proof(prog, proof')    
+//    invariant Last(proof').facts == proof_steps[i].facts;
+  {
+    var new_step := ProofStep(proof_steps[i].sub, proof_steps[i].rule, Last(proof').facts + [Last(proof').new_fact()]);
+    //var new_step := ProofStep(proof_steps[i].sub, proof_steps[i].rule, Last(proof').facts + [new_kb[i]]);
+    assert new_step.rule.head.substitution_complete(new_step.sub);
+    forall clause | clause in new_step.rule.body
+      ensures clause.substitution_complete(new_step.sub)
+           && clause.make_fact(new_step.sub) in Last(proof').facts + [Last(proof').new_fact()]
+    {
+      assert proof_steps[i].valid();
+      assert clause in proof_steps[i].rule.body;
+      assert clause.make_fact(proof_steps[i].sub) in proof_steps[i].facts;
+assume proof_steps[i].facts == Last(proof').facts;
+    }
+    assert forall clause :: clause in new_step.rule.body ==> 
+     // Substitution has a mapping for each variable in the clause
+     && clause.substitution_complete(new_step.sub)
+     // We can satisfy this clause with an existing fact
+     && clause.make_fact(new_step.sub) in new_step.facts;
+    assert new_step.valid();
+    ghost var old_proof := proof';
+    proof' := proof' + [new_step];
+  }
+}
+*/
+
+method immediate_consequence(prog:Program, kb:KnowledgeBase, ghost proof:Proof)
   returns (kb':KnowledgeBase, ghost proof':Proof)
   requires valid_program(prog)
-  requires HasNoDuplicates(kb)
-  requires valid_partial_proof(prog, initial_facts, proof)
-  requires |proof| > 0 ==> Last(proof).facts == ToSet(kb)
-  ensures HasNoDuplicates(kb')
-  ensures |kb'| >= |kb|
-  ensures valid_partial_proof(prog, initial_facts, proof')
-  ensures |proof'| > 0 ==> Last(proof').facts == ToSet(kb')
+  requires valid_partial_proof(prog, proof)
+  requires |kb| > 0 && |proof| > 0 
+  requires Last(kb) == Last(proof).new_fact()
+  requires Last(proof).facts == DropLast(kb)
+  //ensures |kb'| >= |kb|
+  ensures valid_partial_proof(prog, proof')
+  ensures |kb'| > 0 && |proof'| > 0 
+  ensures Last(kb') == Last(proof').new_fact()
+  ensures Last(proof').facts == DropLast(kb')
 {
   kb' := kb;
   proof' := proof;
   for i := 0 to |prog| 
-    invariant HasNoDuplicates(kb')
-    invariant |kb'| >= |kb|
-    invariant valid_partial_proof(prog, initial_facts, proof')
-    invariant |proof'| > 0 ==> Last(proof').facts == ToSet(kb')
+    invariant |kb'| >= |kb| && |proof'| > 0 
+    invariant valid_partial_proof(prog, proof')
+    invariant Last(kb') == Last(proof').new_fact()
+    invariant Last(proof').facts == DropLast(kb')
   {
-    var new_kb, proof_steps := eval_rule(kb', prog[i]);
-    proof' := merge_proofs(prog, initial_facts, proof', proof_steps, kb', new_kb);    
-    kb' := merge(kb', new_kb);    
+    var new_kb, proof' := eval_rule(prog, kb', prog[i], proof');
+    //proof' := merge_proofs(prog, proof', proof_steps, kb', new_kb);    
+    //kb' := merge(kb', new_kb);    
   }
 }
-
+/*
 method solve(prog:Program) returns (kb:KnowledgeBase, ghost proof:Proof)
   requires valid_program(prog)
-  ensures valid_partial_proof(prog, ToSet([]), proof)
-  ensures |proof| > 0 ==> Last(proof).facts == ToSet(kb)
+  ensures valid_partial_proof(prog, proof)
+  ensures |proof| > 0 ==> Last(proof).facts == kb
 {
   kb := [];
   proof := [];
-  LemmaCardinalityOfEmptySetIs0(kb);  
-  LemmaNoDuplicatesCardinalityOfSet(kb);
   var count := 4294967295;  // Cheap hack to avoid proving termination
   while count > 0 
-    invariant HasNoDuplicates(kb)
-    invariant valid_partial_proof(prog, ToSet([]), proof)
-    invariant |proof| > 0 ==> Last(proof).facts == ToSet(kb)
+    invariant valid_partial_proof(prog, proof)
+    invariant |proof| > 0 ==> Last(proof).facts == kb
   {
     var old_kb := kb;
-    kb, proof := immediate_consequence(prog, old_kb, ToSet([]), proof);
+    kb, proof := immediate_consequence(prog, old_kb, proof);
     if |kb| == |old_kb| {
       return kb, proof;
     }
@@ -681,13 +832,14 @@ method query(prog:Program, query:Rule)
   requires valid_rule(query)
 {  
   var kb, partial_proof := solve(prog);
-  assert valid_partial_proof(prog, ToSet([]), partial_proof);
+  assert valid_partial_proof(prog, partial_proof);
   var new_kb, proof_steps := eval_rule(kb, query);
-  assume false;
-  var proof := merge_proofs(prog, ToSet([]), partial_proof, proof_steps, kb, new_kb);    
+assume false;
+  var proof;
+  //var proof := merge_proofs(prog, partial_proof, proof_steps, kb, new_kb);    
   //kb' := merge(kb', new_kb);
   if |new_kb| > 0 {
-    assert valid_proof(prog, ToSet([]), query, proof);
+    assert valid_proof(prog, query, proof);
   }
   
   print "Done\n";
@@ -699,9 +851,6 @@ method query_all(prog:Program, query:Rule)
   requires valid_rule(query)
 {  
   var kb, proof := solve(prog + [query]);
-  //if ? {
-  //  assert valid_proof(prog, ToSet([]), query, proof);
-  //}
   print "Results:\n";
   for i := 0 to |kb| {
     //print kb[i], "\n";
