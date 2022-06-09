@@ -516,6 +516,7 @@ method merge(kb0:KnowledgeBase, kb1:KnowledgeBase) returns (kb':KnowledgeBase)
 
 ghost method merge_proofs(prog:Program, initial_facts:set<Fact>, proof:Proof, proof_steps:Proof, old_kb:KnowledgeBase, new_kb:KnowledgeBase) 
   returns (proof':Proof)
+  requires |proof| == 0 ==> initial_facts == ToSet(old_kb)
   requires valid_partial_proof(prog, initial_facts, proof)
   requires |proof| > 0 ==> Last(proof).facts == ToSet(old_kb);
   requires |proof_steps| == |new_kb|
@@ -528,16 +529,30 @@ ghost method merge_proofs(prog:Program, initial_facts:set<Fact>, proof:Proof, pr
 {
   proof' := proof;
   LemmaCardinalityOfEmptySetIs0(new_kb[..0]);
-  for i := 0 to |proof_steps|
-    invariant First(proof').facts == initial_facts;
+  for i := 0 to |proof_steps|    
+    invariant |proof'| == 0 ==> initial_facts == ToSet(old_kb)
     invariant valid_partial_proof(prog, initial_facts, proof')
     invariant |proof'| > 0 ==> Last(proof').facts == ToSet(old_kb) + ToSet(new_kb[..i]);
   {
-    var new_step := ProofStep(proof_steps[i].sub, proof_steps[i].rule, proof_steps[i].facts + { new_kb[i] });
+    if |proof'| == 0 {
+      var original_step := ProofStep(proof_steps[i].sub, proof_steps[i].rule, initial_facts);
+      proof' := [original_step];
+    }
+    var new_step := ProofStep(proof_steps[i].sub, proof_steps[i].rule, proof[i-1].facts + { new_kb[i] });
     assert new_step.valid();
+    ghost var old_proof := proof';
     proof' := proof' + [new_step];
-    assert First(proof').facts == initial_facts;
+    
     assert forall i :: 0 <= i < |proof'| ==> proof'[i].valid() && proof'[i].rule in prog;
+    forall j | 0 <= j < |proof'| - 1 
+      ensures proof'[j+1].facts == proof'[j].facts + { proof'[j].new_fact() }
+    {
+      if j < |old_proof| - 1 {
+      } else {
+        assert proof'[j+1].facts == proof_steps[i].facts + { new_kb[i] };
+        assert new_kb[i] == proof_steps[i].rule.head.make_fact(proof_steps[i].sub); //proof'[j].new_fact();
+      }
+    }
     assert forall i :: 0 <= i < |proof'| - 1 ==> proof'[i+1].facts == proof'[i].facts + { proof'[i].new_fact() };
 
   }
