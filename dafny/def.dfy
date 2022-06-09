@@ -479,7 +479,7 @@ method eval_query_once(prog:Program, kb:KnowledgeBase, r:Rule, ghost proof:Proof
   requires Last(proof).facts == DropLast(kb)
   ensures |kb'| > |kb| ==> |proof'| > 0 && Last(proof').rule == r && valid_proof(prog, r, proof')
 {
-  //print "Evaluating rule: ", r, "\n";
+  print "Evaluating rule: ", r, " against: ", kb, "\n";
   if |r.body| == 0 {
     kb' := kb + [r.head];
     proof' := proof + [ProofStep(map[], r, kb)];
@@ -558,12 +558,12 @@ method immediate_consequence(prog:Program, kb:KnowledgeBase, ghost proof:Proof)
   kb' := kb;
   proof' := proof;
   for i := 0 to |prog| 
-    invariant |kb'| >= |kb| && |proof'| > 0 
+    invariant |kb'| > 0 && |proof'| > 0 
     invariant valid_partial_proof(prog, proof')
     invariant Last(kb') == Last(proof').new_fact()
     invariant Last(proof').facts == DropLast(kb')
   {
-    var new_kb, proof' := eval_rule(prog, kb', prog[i], proof');  
+    kb', proof' := eval_rule(prog, kb', prog[i], proof');  
   }
 }
 
@@ -700,7 +700,7 @@ method query(prog:Program, query:Rule) returns (b:bool, ghost proof:Proof)
   var kb := maybe_kb.value;
 
   kb, partial_proof := solve(prog, kb, partial_proof);
-  
+  print "Solve produces: ", kb, "\n";
   var new_kb;
   new_kb, partial_proof := eval_query_once(prog, kb, query, partial_proof);
 
