@@ -72,8 +72,10 @@ predicate valid_proof(prog:Program, query:Rule, proof:Proof)
   && |proof| > 0
   // We start with an empty set of facts
   && First(proof).facts == []
-  // Each proof step is valid and uses a rule from the program
-  && (forall i :: 0 <= i < |proof| ==> proof[i].valid() && proof[i].rule in prog)
+  // Each proof step is valid 
+  && (forall i :: 0 <= i < |proof| ==> proof[i].valid())
+  // Each proof step except the last uses a rule from the program
+  && (forall i :: 0 <= i < |proof| - 1 ==> proof[i].rule in prog)
   // Each proof step extends the set of facts by one
   && (forall i :: 0 <= i < |proof| - 1 ==> proof[i+1].facts == proof[i].facts + [ proof[i].new_fact() ] )
   // Last proof step shows the query is valid
@@ -435,6 +437,7 @@ method eval_rule(prog:Program, kb:KnowledgeBase, r:Rule, ghost proof:Proof) retu
   ensures |kb'| > 0 && |proof'| > 0 
   ensures Last(kb') == Last(proof').new_fact()
   ensures Last(proof').facts == DropLast(kb')
+  ensures |kb'| > |kb| ==> Last(proof').rule == r
 {
   //print "Evaluating rule: ", r, "\n";
   if |r.body| == 0 {
@@ -444,7 +447,9 @@ method eval_rule(prog:Program, kb:KnowledgeBase, r:Rule, ghost proof:Proof) retu
 
   kb' := kb;
   proof' := proof;
+  
   var subs := eval_clauses(kb, r.body);
+ 
   //print "\teval_clauses returned: ", subs, "\n";
   for i := 0 to |subs| 
     invariant valid_partial_proof(prog, proof')
@@ -452,6 +457,7 @@ method eval_rule(prog:Program, kb:KnowledgeBase, r:Rule, ghost proof:Proof) retu
     invariant Last(kb') == Last(proof').new_fact()
     invariant Last(proof').facts == DropLast(kb')
     invariant kb <= kb';
+    invariant|kb'| > |kb| ==> Last(proof').rule == r
   {
     ghost var step := ProofStep(subs[i], r, kb');
     var new_fact := substitute(r.head, subs[i]);    
@@ -463,6 +469,44 @@ method eval_rule(prog:Program, kb:KnowledgeBase, r:Rule, ghost proof:Proof) retu
     assert step.valid();
     proof' := proof' + [step];  
   }
+}
+
+method eval_query_once(prog:Program, kb:KnowledgeBase, r:Rule, ghost proof:Proof) returns (kb':KnowledgeBase, ghost proof':Proof)
+  requires valid_rule(r)
+  requires valid_partial_proof(prog, proof)
+  requires |kb| > 0 && |proof| > 0 
+  requires Last(kb) == Last(proof).new_fact()
+  requires Last(proof).facts == DropLast(kb)
+  //ensures valid_partial_proof(prog, proof')
+  //ensures |kb'| > 0 && |proof'| > 0 
+  //ensures Last(kb') == Last(proof').new_fact()
+  //ensures Last(proof').facts == DropLast(kb')
+  ensures |kb'| > |kb| ==> |proof'| > 0 && Last(proof').rule == r && valid_proof(prog, r, proof')
+{
+  //print "Evaluating rule: ", r, "\n";
+  if |r.body| == 0 {
+    kb' := kb + [r.head];
+    proof' := proof + [ProofStep(map[], r, kb)];
+  }
+
+  kb' := kb;
+  proof' := proof;
+  var subs := eval_clauses(kb, r.body);
+
+  if |subs| == 0 {
+    return;
+  }
+
+  var i := 0;
+  ghost var step := ProofStep(subs[i], r, kb');
+  var new_fact := substitute(r.head, subs[i]);    
+  //print "\tFound a new fact: ", new_fact, "\n";
+  ghost var old_kb' := kb';
+  kb' := kb' + [new_fact];    
+        
+  lemma_valid_proof_step(step);
+  assert step.valid();
+  proof' := proof' + [step];  
 }
 
 // TODO: Migrate this to std-lib
@@ -737,23 +781,31 @@ method immediate_consequence(prog:Program, kb:KnowledgeBase, ghost proof:Proof)
     //kb' := merge(kb', new_kb);    
   }
 }
-/*
-method solve(prog:Program) returns (kb:KnowledgeBase, ghost proof:Proof)
+
+method solve(prog:Program, kb:KnowledgeBase, ghost proof:Proof) returns (kb':KnowledgeBase, ghost proof':Proof)
   requires valid_program(prog)
-  ensures valid_partial_proof(prog, proof)
-  ensures |proof| > 0 ==> Last(proof).facts == kb
+  requires valid_partial_proof(prog, proof)
+  requires |kb| > 0 && |proof| > 0 
+  requires Last(kb) == Last(proof).new_fact()
+  requires Last(proof).facts == DropLast(kb)
+  ensures valid_partial_proof(prog, proof')
+  ensures |kb'| > 0 && |proof'| > 0 
+  ensures Last(kb') == Last(proof').new_fact()
+  ensures Last(proof').facts == DropLast(kb')
 {
-  kb := [];
-  proof := [];
+  kb' := kb;
+  proof' := proof;
   var count := 4294967295;  // Cheap hack to avoid proving termination
   while count > 0 
-    invariant valid_partial_proof(prog, proof)
-    invariant |proof| > 0 ==> Last(proof).facts == kb
+    invariant valid_partial_proof(prog, proof')
+    invariant |kb'| > 0 && |proof'| > 0 
+    invariant Last(kb') == Last(proof').new_fact()
+    invariant Last(proof').facts == DropLast(kb')
   {
-    var old_kb := kb;
-    kb, proof := immediate_consequence(prog, old_kb, proof);
-    if |kb| == |old_kb| {
-      return kb, proof;
+    var old_kb' := kb';
+    kb', proof' := immediate_consequence(prog, old_kb', proof');
+    if |kb'| == |old_kb'| {
+      return kb', proof';
     }
     count := count - 1;
   }
@@ -826,25 +878,59 @@ method check_program(prog:Program) returns (b:bool)
   }
 }
 
-// Checks if any fact can satisfy the query
-method query(prog:Program, query:Rule)
+method initialize_proof(prog:Program) returns (kb:Option<KnowledgeBase>, ghost proof:Proof)
   requires valid_program(prog)
-  requires valid_rule(query)
-{  
-  var kb, partial_proof := solve(prog);
-  assert valid_partial_proof(prog, partial_proof);
-  var new_kb, proof_steps := eval_rule(kb, query);
-assume false;
-  var proof;
-  //var proof := merge_proofs(prog, partial_proof, proof_steps, kb, new_kb);    
-  //kb' := merge(kb', new_kb);
-  if |new_kb| > 0 {
-    assert valid_proof(prog, query, proof);
+  ensures kb.Some? ==> 
+       && valid_partial_proof(prog, proof)
+       && |kb.value| > 0 && |proof| > 0 
+       && Last(kb.value) == Last(proof).new_fact()
+       && Last(proof).facts == DropLast(kb.value)
+{
+  for i := 0 to |prog| {
+    var r := prog[i];
+    if |r.body| == 0 {
+      ghost var step := ProofStep(map[], r, []);
+      assert step.valid();
+      kb := Some([r.head]);
+      proof := [step];
+      return;
+    }
   }
-  
-  print "Done\n";
+  kb := None;
 }
 
+
+// Checks if any fact can satisfy the query
+method query(prog:Program, query:Rule) returns (b:bool, ghost proof:Proof)
+  requires valid_program(prog)
+  requires valid_rule(query)
+  ensures b ==> valid_proof(prog, query, proof)
+{
+  var maybe_kb, partial_proof := initialize_proof(prog);
+  if maybe_kb.None? {
+    print "Failed to find any facts in your program.  Aborting.\n";
+    b := false;
+    return;
+  }  
+  var kb := maybe_kb.value;
+
+  kb, partial_proof := solve(prog, kb, partial_proof);
+  
+  var new_kb;
+  new_kb, partial_proof := eval_query_once(prog, kb, query, partial_proof);
+
+  if |new_kb| > |kb| {
+    proof := partial_proof;
+    print "Query succeeded!\n";
+    b := true;
+    return;
+  } else {
+    print "Query failed.  Sorry!\n";
+    b := false;
+    return;
+  }
+}
+/*
 // Finds all facts derivable from the query
 method query_all(prog:Program, query:Rule)
   requires valid_program(prog)
@@ -861,6 +947,7 @@ method query_all(prog:Program, query:Rule)
   }
   print "Done\n";
 }
+*/
 
 method run(raw_prog:Program)
   requires |raw_prog| > 0
@@ -872,7 +959,7 @@ method run(raw_prog:Program)
   var valid_prog := check_program(prog);
   var valid_query := check_rule(q);
   if valid_prog && valid_query {
-    query_all(prog, q);  
+    var b, proof := query(prog, q);  
   } else {
     print "Sorry, that's an invalid program and/or query\n";
   }
@@ -895,4 +982,4 @@ method Main() {
   var q := Rule(Clause("query", [Var("W")]), [Clause("connected", [Const("x"), Var("W")])]);
   run(prog, q);
 }
-*/*/
+*/
