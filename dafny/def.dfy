@@ -463,11 +463,12 @@ method eval_rule(prog:Program, kb:KnowledgeBase, r:Rule, ghost proof:Proof) retu
     var new_fact := substitute(r.head, subs[i]);    
     //print "\tFound a new fact: ", new_fact, "\n";
     ghost var old_kb' := kb';
-    kb' := kb' + [new_fact];    
-          
-    lemma_valid_proof_step(step);
-    assert step.valid();
-    proof' := proof' + [step];  
+    if new_fact !in kb' {
+      kb' := kb' + [new_fact];  
+      lemma_valid_proof_step(step);
+      assert step.valid();
+      proof' := proof' + [step];    
+    } 
   }
 }
 
@@ -479,7 +480,7 @@ method eval_query_once(prog:Program, kb:KnowledgeBase, r:Rule, ghost proof:Proof
   requires Last(proof).facts == DropLast(kb)
   ensures |kb'| > |kb| ==> |proof'| > 0 && Last(proof').rule == r && valid_proof(prog, r, proof')
 {
-  print "Evaluating rule: ", r, " against: ", kb, "\n";
+  //print "Evaluating rule: ", r, " against: ", kb, "\n";
   if |r.body| == 0 {
     kb' := kb + [r.head];
     proof' := proof + [ProofStep(map[], r, kb)];
@@ -589,6 +590,7 @@ method solve(prog:Program, kb:KnowledgeBase, ghost proof:Proof) returns (kb':Kno
   {
     var old_kb' := kb';
     kb', proof' := immediate_consequence(prog, old_kb', proof');
+    //print "New |kb| = ", |kb'|, "\n";
     if |kb'| == |old_kb'| {
       return kb', proof';
     }
@@ -699,8 +701,7 @@ method query(prog:Program, query:Rule) returns (b:bool, ghost proof:Proof)
   }  
   var kb := maybe_kb.value;
 
-  kb, partial_proof := solve(prog, kb, partial_proof);
-  print "Solve produces: ", kb, "\n";
+  kb, partial_proof := solve(prog, kb, partial_proof);  
   var new_kb;
   new_kb, partial_proof := eval_query_once(prog, kb, query, partial_proof);
 
