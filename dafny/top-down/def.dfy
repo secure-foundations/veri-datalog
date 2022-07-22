@@ -8,6 +8,14 @@ import opened Seq
 //import opened Sets
 import opened Wrappers
 
+
+// References:
+//  https://abiteboul.com/TEACHING/DBCOURSE/deductive-eval-datalog.pdf
+//  https://www.sti-innsbruck.at/sites/default/files/thesis/christoph-fuchs-thesis-final-09-2008.pdf
+//  http://webdam.inria.fr/Alice/pdfs/Chapter-13.pdf
+//  https://pages.cs.wisc.edu/~paris/cs838-s16/lecture-notes/lecture8.pdf
+//  https://www.vldb.org/conf/1987/P043.PDF
+
 ////////////////////////////////////////
 // Trusted Specification
 ////////////////////////////////////////
@@ -453,44 +461,6 @@ method eval_query_once(prog:Program, kb:KnowledgeBase, r:Rule, ghost proof:Proof
   proof' := proof' + [step];  
 }
 
-// TODO: Migrate this to std-lib
-/*
-method LemmaHasNoDuplicatesExtend<T>(s:seq<T>, elt:T)
-  requires HasNoDuplicates(s)
-  requires elt !in ToSet(s)
-  ensures  HasNoDuplicates([elt]+s)
-  ensures  ToSet([elt] + s) == ToSet(s) + {elt}
-{
-  reveal ToSet();
-  reveal HasNoDuplicates();
-}
-
-// TODO: Migrate this to std-lib
-method SetToSeq<T>(s:set<T>) returns (q:seq<T>)
-  ensures HasNoDuplicates(q)
-  ensures |q| == |s|
-  ensures ToSet(q) == s
-{
-  q := [];
-  var subset := s;
-  LemmaCardinalityOfEmptySetIs0(q);
-  LemmaNoDuplicatesCardinalityOfSet(q);
-  while (subset != {}) 
-    invariant ToSet(q) * subset == {}
-    invariant ToSet(q) + subset == s
-    invariant HasNoDuplicates(q)
-  {
-    var elt :| elt in subset;
-    assert elt !in ToSet(q);
-    LemmaHasNoDuplicatesExtend(q, elt);
-    q := [elt] + q;    
-    subset := subset - {elt};
-  }
-  assert ToSet(q) == s;
-  LemmaCardinalityOfSetNoDuplicates(q);
-}
-*/
-
 method immediate_consequence(prog:Program, kb:KnowledgeBase, ghost proof:Proof)
   returns (kb':KnowledgeBase, ghost proof':Proof)
   requires valid_program(prog)
@@ -545,109 +515,12 @@ method solve(prog:Program, kb:KnowledgeBase, ghost proof:Proof) returns (kb':Kno
   }
 }
 
-method clause_is_ground(c:Clause) returns (b:bool)
-  ensures b == c.is_ground()
-{
-  for i := 0 to |c.terms| 
-    invariant forall j :: 0 <= j < i ==> c.terms[j].Const?
-  {
-    if !c.terms[i].Const? {
-      return false;
-    }
-  }
-  return true;
-}
-
-method find_var(term:Term, clauses:seq<Clause>) returns (b:bool)
-  ensures b == match_exists(term, clauses)
-{
-  for i := 0 to |clauses| 
-    invariant forall m :: 0 <= m < i ==>
-                (forall k :: 0 <= k < |clauses[m].terms| ==> clauses[m].terms[k] != term) 
-  {
-    var clause := clauses[i];
-    for j := 0 to |clause.terms| 
-      invariant forall k :: 0 <= k < j ==> clause.terms[k] != term
-    {
-      if clause.terms[j] == term {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-method check_rule(r:Rule) returns (b:bool)
-  ensures b == valid_rule(r)
-{
-  if |r.body| == 0 {
-    b := clause_is_ground(r.head);
-  } else {
-      for i := 0 to |r.head.terms| 
-        invariant forall j :: 0 <= j < i ==> (r.head.terms[j].Var? ==> match_exists(r.head.terms[j], r.body))
-      {
-        var term := r.head.terms[i];
-        if term.Var? {
-          var b := find_var(term, r.body);
-          if !b {
-            return false;
-          }
-        }
-      }
-      return true;
-  }
-}
-
-method check_program(prog:Program) returns (b:bool)
-  ensures b == valid_program(prog)
-{
-  b := true;
-  for i := 0 to |prog| 
-    invariant forall j :: 0 <= j < i ==> valid_rule(prog[j])
-  {
-    var valid_rule := check_rule(prog[i]);
-    if !valid_rule {
-      return false;
-    }
-  }
-}
-
-method initialize_proof(prog:Program) returns (kb:Option<KnowledgeBase>, ghost proof:Proof)
-  requires valid_program(prog)
-  ensures kb.Some? ==> 
-       && valid_partial_proof(prog, proof)
-       && |kb.value| > 0 && |proof| > 0 
-       && Last(kb.value) == Last(proof).new_fact()
-       && Last(proof).facts == DropLast(kb.value)
-{
-  for i := 0 to |prog| {
-    var r := prog[i];
-    if |r.body| == 0 {
-      ghost var step := ProofStep(map[], r, []);
-      assert step.valid();
-      kb := Some([r.head]);
-      proof := [step];
-      return;
-    }
-  }
-  kb := None;
-}
-
 
 // Checks if any fact can satisfy the query
 method query(prog:Program, query:Rule) returns (b:bool, ghost proof:Proof)
   requires valid_program(prog)
   requires valid_rule(query)
-  ensures b ==> valid_proof(prog, query, proof)
 {
-  var maybe_kb, partial_proof := initialize_proof(prog);
-  if maybe_kb.None? {
-    print "Failed to find any facts in your program.  Aborting.\n";
-    b := false;
-    return;
-  }  
-  var kb := maybe_kb.value;
-
   kb, partial_proof := solve(prog, kb, partial_proof);  
   var new_kb;
   new_kb, partial_proof := eval_query_once(prog, kb, query, partial_proof);
@@ -663,56 +536,4 @@ method query(prog:Program, query:Rule) returns (b:bool, ghost proof:Proof)
     return;
   }
 }
-/*
-// Finds all facts derivable from the query
-method query_all(prog:Program, query:Rule)
-  requires valid_program(prog)
-  requires valid_rule(query)
-{  
-  var kb, proof := solve(prog + [query]);
-  print "Results:\n";
-  for i := 0 to |kb| {
-    //print kb[i], "\n";
-    if kb[i].name == query.head.name {
-      //return kb[i];
-      print kb[i], "\n";
-    }
-  }
-  print "Done\n";
-}
-*/
 
-method run(raw_prog:Program)
-  requires |raw_prog| > 0
-{
-  var prog := DropLast(raw_prog);
-  var q := Last(raw_prog);
-  //print "Program is: ", prog, "\n";
-  //print "Query is: ", q, "\n";
-  var valid_prog := check_program(prog);
-  var valid_query := check_rule(q);
-  if valid_prog && valid_query {
-    var b, proof := query(prog, q);  
-  } else {
-    print "Sorry, that's an invalid program and/or query\n";
-  }
-}
-
-/*
-method Main() {
-  var f1 := Rule(Clause("node", [Const("x")]), []);
-  var f2 := Rule(Clause("node", [Const("y")]), []);
-  var f3 := Rule(Clause("node", [Const("z")]), []);
-
-  var e1 := Rule(Clause("edge", [Const("x"), Const("y")]), []);
-  var e2 := Rule(Clause("edge", [Const("y"), Const("z")]), []);  
-
-  var r1 := Rule(Clause("connected", [Var("A"), Var("A")]), [Clause("node", [Var("A")])]);
-  //var r1 := Rule(Clause("connected", [Var("A"), Var("B")]), [Clause("edge", [Var("A"), Var("B")])]);
-  var r2 := Rule(Clause("connected", [Var("A"), Var("B")]), [Clause("connected", [Var("A"), Var("M")]), Clause("edge", [Var("M"), Var("B")])]);
-
-  var prog := [f1, f2, f3, e1, e2, r1, r2];
-  var q := Rule(Clause("query", [Var("W")]), [Clause("connected", [Const("x"), Var("W")])]);
-  run(prog, q);
-}
-*/
