@@ -11,24 +11,8 @@ import opened Wrappers
 ////////////////////////////////////////
 // Trusted Specification
 ////////////////////////////////////////
-datatype Value =
-  | Name(n:string)
-  | List(s:seq<Value>)
-  | Nat(n:nat)
-  | String(s:string)
-
-datatype Op =
-  | Eq
-  | Neq
-  | Lt
-  | Le
-  | Gt
-  | Ge
-  | Add
-  //| ListSplit  // TODO
-
-datatype Term = Var(s:string) | Const(c:Value) | Bop(op:Op, lhs:Term, rhs:Term)
-type ConstTerm = t:Term | t.Const? witness Const(Nat(0))
+datatype Term = Var(s:string) | Const(c:string)
+type ConstTerm = t:Term | t.Const? witness Const("")
 type VarTerm = t:Term | t.Var? witness Var("")
 type Substitution = map<Term,ConstTerm>
 datatype Clause = Clause(name:string, terms:seq<Term>)
