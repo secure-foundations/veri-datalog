@@ -22,7 +22,7 @@ import opened Wrappers
 datatype Term = Var(s:string) | Const(c:string)
 type ConstTerm = t:Term | t.Const? witness Const("")
 type VarTerm = t:Term | t.Var? witness Var("")
-type Substitution = map<Term,ConstTerm>
+type Substitution = map<Term,Term>
 datatype Clause = Clause(name:string, terms:seq<Term>)
 {
   predicate is_ground() 
@@ -35,8 +35,13 @@ datatype Clause = Clause(name:string, terms:seq<Term>)
     forall t :: t in terms && t.Var? ==> t in sub
   }
 
+  predicate substitution_concrete(sub:Substitution) 
+  {
+    substitution_complete(sub) && forall t :: t in terms && t.Var? ==> sub[t].Const?
+  }
+
   function make_fact(sub:Substitution) : Fact
-    requires substitution_complete(sub)
+    requires substitution_concrete(sub)
   {
     var new_terms := 
       seq(|terms|, 
@@ -57,10 +62,10 @@ datatype ProofStep = ProofStep(sub:Substitution, rule:Rule, facts:seq<Fact>)
 {
   predicate valid() {
     // Substitution has a mapping for each variable in the head
-    rule.head.substitution_complete(sub) &&
+    rule.head.substitution_concrete(sub) &&
     (forall clause :: clause in rule.body ==> 
      // Substitution has a mapping for each variable in the clause
-     && clause.substitution_complete(sub)
+     && clause.substitution_concrete(sub)
      // We can satisfy this clause with an existing fact
      && clause.make_fact(sub) in facts)
   }
@@ -99,62 +104,7 @@ predicate valid_query(prog:Program, query:Rule)
 // (Verified) Implementation
 ////////////////////////////////////////
 
-predicate match_exists(t:Term, clauses:seq<Clause>) 
-{
-  exists i, j :: 0 <= i < |clauses| && 0 <= j < |clauses[i].terms| && clauses[i].terms[j] == t
-}
-
-predicate rule_is_range_restricted(r:Rule)
-{
-  if |r.body| == 0 then true
-  else
-    forall t:Term :: t in r.head.terms ==> 
-      (t.Var? ==> match_exists(t, r.body))
-}
-
-predicate valid_rule(r:Rule) {
-  && (|r.body| == 0 ==> r.head.is_ground())
-  && rule_is_range_restricted(r)
-}
-
-predicate valid_program(p:Program) {
-  forall i :: 0 <= i < |p| ==> valid_rule(p[i])
-}
-
-function apply_sub(c:Clause, sub:Substitution) : Clause
-{
-  var new_terms := 
-      seq(|c.terms|, 
-          i requires 0 <= i < |c.terms| => 
-            var t := c.terms[i];
-            match t
-              case Const(_) => t
-              case Var(_) => if t in sub then sub[t] else t);
-    Clause(c.name, new_terms)
-}
-
-// Needed below to satisfy Dafny's type checker
-function term_to_var_term(t:Term) : VarTerm
-  requires t.Var?
-{
-  t
-}
-
-function terms_vars(terms:seq<Term>) : set<VarTerm>
-{
-  set i | 0 <= i < |terms| && terms[i].Var? :: term_to_var_term(terms[i])
-}
-
-function clause_vars(c:Clause) : set<VarTerm>
-{
-  terms_vars(c.terms)
-}
-
 method substitute(c:Clause, sub:Substitution) returns (c':Clause)
-  ensures c.substitution_complete(sub) ==> c'.is_ground()
-  ensures forall sub' :: c'.substitution_complete(sub') ==>
-            c.substitution_complete(sub + sub')
-  ensures c' == apply_sub(c, sub)
 {
   var new_terms := 
     seq(|c.terms|, 
@@ -164,31 +114,45 @@ method substitute(c:Clause, sub:Substitution) returns (c':Clause)
             case Const(_) => t
             case Var(_) => if t in sub then sub[t] else t);
   c' := Clause(c.name, new_terms);
-
-  forall sub' | c'.substitution_complete(sub') 
-    ensures c.substitution_complete(sub + sub')
-  {
-    forall t | t in c.terms && t.Var? 
-      ensures t in sub + sub'
-    {
-      var i :| 0 <= i < |c.terms| && c.terms[i] == t;
-      if c'.terms[i].Var? {
-      }
-    }
-  }
 }
 
-method unify_terms(terms:seq<Term>, consts:seq<Term>) returns (s:Option<Substitution>)
+method unify_terms(head:seq<Term>, target:seq<Term>) returns (s:Option<Substitution>)
+  requires |head| == |target|
 {
-
+  var sub := map [];
+  for i := 0 to |head| {
+    var h := head[i];
+    var t := target[i];
+    match (h, t) {
+      case (Const(hc), Const(tc)) => if hc != tc { return None; }
+      case (Var(_), Const(_)) => sub := sub[h := t];
+      case (Const(_), Var(_)) => return None;
+      case (Var(_), Var(_)) => sub := sub[t := t];
+    }
+  }
+  return Some(sub);
 }
 
 method unify(c1:Clause, c2:Clause) returns (s:Option<Substitution>)
 {
-  if c1.name != c2.name {
+  if c1.name != c2.name || |c1.terms| != |c2.terms| {
     return None;
   } else { 
     s := unify_terms(c1.terms, c2.terms);   
+  }
+}
+
+method find_matching_rules(c:Clause, prog:Program) returns (matches: seq<(Rule, Substitution)>) 
+{
+  matches := [];
+  // Find rules that might apply
+  for j := 0 to |prog| {
+    var rule := prog[j];
+    var uresult := unify(c, rule.head);
+    match uresult {
+      case None => 
+      case Some(sub) => matches := matches + [(rule, sub)];
+    }
   }
 }
 
@@ -196,14 +160,22 @@ type KnowledgeBase = seq<Fact>
 
 method query(prog:Program, query:Rule) returns (subs: seq<Substitution>)
 {
+  
+
   subs := [];
-  for i := 0 to |query.body| {
+  var stack := query.body;
+  while |stack| > 0 {
+    var target_clause := stack[0];
+    stack := stack[1..];
     // Find rules that might apply
     for j := 0 to |prog| {
-      var uresult := unify(query.body[i], prog[j].head);
+      var uresult := unify(target_clause, prog[j].head);
       match uresult {
         case None => 
-        case Some(sub) => subs := subs + [sub];
+        case Some(sub) => 
+          // Apply sub to the rule's body
+
+          // Push body onto the stack
       }
     }
   }
