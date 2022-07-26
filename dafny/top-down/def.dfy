@@ -10,6 +10,7 @@ import opened Wrappers
 
 
 // References:
+//  http://tinman.cs.gsu.edu/~raj/8710/f03/ch3.pdf
 //  https://abiteboul.com/TEACHING/DBCOURSE/deductive-eval-datalog.pdf
 //  https://www.sti-innsbruck.at/sites/default/files/thesis/christoph-fuchs-thesis-final-09-2008.pdf
 //  http://webdam.inria.fr/Alice/pdfs/Chapter-13.pdf
@@ -127,7 +128,7 @@ method unify_terms(head:seq<Term>, target:seq<Term>) returns (s:Option<Substitut
       case (Const(hc), Const(tc)) => if hc != tc { return None; }
       case (Var(_), Const(_)) => sub := sub[h := t];
       case (Const(_), Var(_)) => return None;
-      case (Var(_), Var(_)) => sub := sub[t := t];
+      case (Var(_), Var(_)) => sub := sub[h := t];
     }
   }
   return Some(sub);
@@ -158,25 +159,34 @@ method find_matching_rules(c:Clause, prog:Program) returns (matches: seq<(Rule, 
 
 type KnowledgeBase = seq<Fact>
 
-method query(prog:Program, query:Rule) returns (subs: seq<Substitution>)
+method query(prog:Program, query:Rule) returns (b:bool)
 {
-  
-
-  subs := [];
-  var stack := query.body;
+  var stack: seq<seq<Clause>> := [query.body];
   while |stack| > 0 {
-    var target_clause := stack[0];
+    var clauses := stack[0];
     stack := stack[1..];
-    // Find rules that might apply
-    for j := 0 to |prog| {
-      var uresult := unify(target_clause, prog[j].head);
-      match uresult {
-        case None => 
-        case Some(sub) => 
-          // Apply sub to the rule's body
-
-          // Push body onto the stack
+    
+    // Process the first clause first (TODO: Choose more strategically)
+    assume |clauses| > 0;   // TODO: Make this an invariant on the loop
+    var clause := clauses[0];
+    var matches := find_matching_rules(clause, prog);
+    if |matches| == 0 {
+      // We can't make any progress on this branch, so stop here
+      // How do we signal failure?  Just drop the clause?
+    } else {
+      for i := 0 to |matches| {
+        var (rule, sub) := matches[i];
+        // TODO: Probably not the same sub in both of these cases
+        var rule_body := apply_sub(sub, rule.body);
+        var remaining_clauses := apply_sub(sub, clauses[1..]);
+        var new_clauses := rule_body + remaining_clauses;
+        if |new_clauses| == 0 {
+          // We've resolved everything down to basic facts!
+          return true;
+        }
+        stack := [new_clauses] + stack;
       }
     }
   }
+  return false;
 }
