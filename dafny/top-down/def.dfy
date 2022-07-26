@@ -200,7 +200,6 @@ method apply_sub_clauses(sub:Substitution, clauses:seq<Clause>) returns (s:seq<C
             apply_sub_clause(sub, c));          
 }
 
-/*
 datatype TermPattern = VarPat | ConstPat(c:string)
 datatype ClausePattern = ClausePattern(name:string, patterns:seq<TermPattern>)
 
@@ -220,44 +219,73 @@ function method mk_clause_pattern(c:Clause) : ClausePattern
           mk_term_pattern(t));
   ClausePattern(c.name, patterns)
 }
-*/
+
+datatype SldNode = SldNode(path: set<ClausePattern>, clauses:seq<Clause>)
+{
+  predicate valid() {
+    |clauses| > 0
+  }
+
+  function method head() : Clause
+    requires valid()
+  {
+    clauses[0]
+  }
+
+  function method rest() : seq<Clause>
+    requires valid()
+  {
+    clauses[1..]
+  }
+}
+
+method print_node(node:SldNode) {
+
+}
 
 method query(prog:Program, query:Rule) returns (b:bool)
   requires |query.body| > 0
 {
-  var stack: seq<seq<Clause>> := [query.body];
+  var stack: seq<SldNode> := [SldNode({mk_clause_pattern(query.head)}, query.body)];
   //var goals := {};
   var bound := 0x1_0000_0000;
   while |stack| > 0 && bound > 0 
     decreases bound
-    invariant forall i :: 0 <= i < |stack| ==> |stack[i]| > 0
+    invariant forall i :: 0 <= i < |stack| ==> stack[i].valid()
   {
-    var clauses := stack[0];
+    var node := stack[0];
+    //print "Processing node: ", node, "\n";
     stack := stack[1..];
     
     // Process the first clause first (TODO: Choose more strategically)
-    var clause := clauses[0];
-    //var pat := mk_clause_pattern(clause);
-    // if pat in goals { }
-    //goals := goals + { pat };
-    var matches := find_matching_rules(clause, prog);
-    if |matches| == 0 {
-      // We can't make any progress on this branch, so stop here
-      // Signal failure by stopping to process this clause set?
+    var clause := node.head();
+    var clause_pat := mk_clause_pattern(clause);
+    if clause_pat in node.path {
+      //print "Clause ", clause, " is already on the path.  Skipping it.\n";
+      // This is a dead end, since it's trying to make us loop
+      // by solving a goal we're already trying to solve
     } else {
-      for i := 0 to |matches| 
-        invariant forall i :: 0 <= i < |stack| ==> |stack[i]| > 0
-      {
-        var (rule, sub) := matches[i];        
-        var rule_body := apply_sub_clauses(sub, rule.body);
-        var remaining_clauses := apply_sub_clauses(sub, clauses[1..]);
-        var new_clauses := rule_body + remaining_clauses;
-        if |new_clauses| == 0 {
-          // We've resolved everything down to basic facts!
-          return true;
-        }
-        stack := [new_clauses] + stack;          
-      }      
+      var matches := find_matching_rules(clause, prog);
+      if |matches| == 0 {
+        // We can't make any progress on this branch, so stop here
+        // Signal failure by stopping to process this clause set?
+      } else {
+        for i := 0 to |matches| 
+          invariant forall i :: 0 <= i < |stack| ==> stack[i].valid()
+        {
+          var (rule, sub) := matches[i];        
+          var rule_body := apply_sub_clauses(sub, rule.body);
+          var remaining_clauses := apply_sub_clauses(sub, node.rest());
+          var new_clauses := rule_body + remaining_clauses;
+          if |new_clauses| == 0 {
+            // We've resolved everything down to basic facts!
+            return true;
+          }          
+          var new_path := node.path + { clause_pat };
+          var new_node := SldNode(new_path, new_clauses);
+          stack := [new_node] + stack;
+        }      
+      }
     }
     bound := bound - 1;
   }
