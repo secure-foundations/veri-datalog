@@ -248,8 +248,7 @@ method query(prog:Program, query:Rule) returns (b:bool)
       for i := 0 to |matches| 
         invariant forall i :: 0 <= i < |stack| ==> |stack[i]| > 0
       {
-        var (rule, sub) := matches[i];
-        // TODO: Probably not the same sub in both of these cases
+        var (rule, sub) := matches[i];        
         var rule_body := apply_sub_clauses(sub, rule.body);
         var remaining_clauses := apply_sub_clauses(sub, clauses[1..]);
         var new_clauses := rule_body + remaining_clauses;
