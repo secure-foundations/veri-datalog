@@ -200,25 +200,50 @@ method apply_sub_clauses(sub:Substitution, clauses:seq<Clause>) returns (s:seq<C
             apply_sub_clause(sub, c));          
 }
 
+/*
+datatype TermPattern = VarPat | ConstPat(c:string)
+datatype ClausePattern = ClausePattern(name:string, patterns:seq<TermPattern>)
+
+function method mk_term_pattern(t:Term) : TermPattern
+{
+  match t
+    case Const(c) => ConstPat(c)
+    case Var(_) => VarPat
+}
+
+function method mk_clause_pattern(c:Clause) : ClausePattern
+{
+  var patterns :=
+    seq(|c.terms|, 
+        i requires 0 <= i < |c.terms| => 
+          var t := c.terms[i];
+          mk_term_pattern(t));
+  ClausePattern(c.name, patterns)
+}
+*/
+
 method query(prog:Program, query:Rule) returns (b:bool)
   requires |query.body| > 0
 {
   var stack: seq<seq<Clause>> := [query.body];
+  //var goals := {};
   var bound := 0x1_0000_0000;
   while |stack| > 0 && bound > 0 
     decreases bound
     invariant forall i :: 0 <= i < |stack| ==> |stack[i]| > 0
   {
     var clauses := stack[0];
-    stack := stack[1..];    
+    stack := stack[1..];
     
     // Process the first clause first (TODO: Choose more strategically)
-    assert |clauses| > 0;   // TODO: Make this an invariant on the loop
     var clause := clauses[0];
+    //var pat := mk_clause_pattern(clause);
+    // if pat in goals { }
+    //goals := goals + { pat };
     var matches := find_matching_rules(clause, prog);
     if |matches| == 0 {
       // We can't make any progress on this branch, so stop here
-      // How do we signal failure?  Just drop the clause?
+      // Signal failure by stopping to process this clause set?
     } else {
       for i := 0 to |matches| 
         invariant forall i :: 0 <= i < |stack| ==> |stack[i]| > 0
