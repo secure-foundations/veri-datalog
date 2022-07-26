@@ -145,35 +145,157 @@ method unify(head:Clause, target:Clause) returns (s:Option<Substitution>)
 
 function method {:extern} int_to_string(i:int) : string
 
-function method make_vars_unique_clause(c:Clause, counter:int) : Clause
-{
-  var new_terms := 
-    seq(|c.terms|, 
-        i requires 0 <= i < |c.terms| => 
-          var t := c.terms[i];
-          match t 
-            case Const(_) => t
-            case Var(v) => Var(v + int_to_string(counter)));
-  Clause(c.name, new_terms)  
+lemma {:axiom} int_to_string_injective()
+  ensures forall i1, i2 :: i1 != i2 ==> int_to_string(i1) != int_to_string(i2)
+  ensures forall i :: ':' !in int_to_string(i)
+
+predicate counter_prefix(name:string, current_ctr:int) {
+  exists i :: i < current_ctr && (int_to_string(i) + ":") <= name
 }
 
-method make_vars_unique(r:Rule, counter:int) returns (r': Rule)
+lemma unique_prefix(i1:int, i2:int, s:string)
+  requires i1 != i2
+  requires (int_to_string(i1) + ":") <= s
+  requires (int_to_string(i2) + ":") <= s
+  ensures false
 {
-  var head := make_vars_unique_clause(r.head, counter);
-  var body := seq(|r.body|, 
-           i requires 0 <= i < |r.body| => 
-            var c := r.body[i];
-            make_vars_unique_clause(c, counter));
+  var s1 := int_to_string(i1);
+  var s2 := int_to_string(i2);
+  int_to_string_injective();
+  if |s1| == |s2| {
+    var i := 0;
+    var found := false;
+    var found_index := 0;
+
+    for i := 0 to |s1| 
+      invariant forall j :: 0 <= j < i && !found ==> s1[j] == s2[j]
+      invariant found ==> found_index < |s1| && s1[found_index] != s2[found_index]
+    {
+      if s1[i] != s2[i] {
+        found := true;
+        found_index := i;
+      }
+    }
+    
+    if !found {
+      assert false;
+    } else {
+      assert s1[found_index] == s[found_index];
+      assert s2[found_index] == s[found_index];
+      assert s1[found_index] != s2[found_index];
+      assert false;
+    }
+  } else if |s1| < |s2| {
+    assert s[|s1|] == ':';
+  } else {
+    assert s[|s2|] == ':';
+  }
+}
+
+class UniqueNamer {
+  var counter: int;
+  ghost var old_names: set<string>;
+  ghost var new_names: set<string>;
+
+  predicate {:opaque} valid() 
+    reads this
+  {
+    (forall name :: name in old_names ==> counter_prefix(name, counter)) &&
+    (forall name :: name in new_names ==> (int_to_string(counter) + ":") <= name)
+  }
+
+  constructor() 
+    ensures valid()
+  {
+    counter := 0;
+    old_names := {};
+    new_names := {};
+    new; // Indicates we're done setting up the new object and allows us to call valid below
+    reveal valid();
+  }
+
+  method inc() 
+    requires valid()
+    modifies this
+    ensures valid()
+    ensures old_names == old_names + new_names
+    ensures new_names == {}
+  {
+    reveal valid();
+    counter := counter + 1;
+    old_names := old_names + new_names;
+    new_names := {};
+  }
+
+  method mk_unique(s:string) returns (s':string)
+    requires valid()
+    modifies this`new_names
+    ensures valid()
+    ensures s' !in old_names
+  {
+    reveal valid();
+    s' := (int_to_string(counter) + ":") + s;
+    new_names := new_names + {s'}; 
+    if s' in old_names {
+      assert counter_prefix(s', counter);
+      ghost var i :| i < counter && (int_to_string(i) + ":") <= s';
+      unique_prefix(i, counter, s');
+      assert false;
+    }
+  }
+}
+
+method make_vars_unique_clause(c:Clause, namer:UniqueNamer) returns (c':Clause)
+  requires namer.valid()
+  modifies namer
+  ensures namer.valid()
+{
+  var new_terms := [];
+  for i := 0 to |c.terms| 
+    invariant namer.valid()
+  {
+    var t := c.terms[i];
+    var t';
+    match t {
+      case Const(_) => t' := t;
+      case Var(v) => 
+        var new_name := namer.mk_unique(v);
+        t' := Var(new_name);
+    }
+    new_terms := new_terms + [t'];
+  }
+  c' := Clause(c.name, new_terms);
+}
+
+method make_vars_unique(r:Rule, namer:UniqueNamer) returns (r': Rule)
+  requires namer.valid()
+  modifies namer
+  ensures namer.valid()
+{
+  var head := make_vars_unique_clause(r.head, namer);
+  var body := [];
+  for i := 0 to |r.body| 
+    invariant namer.valid()
+  {
+    var c := r.body[i];
+    var c' := make_vars_unique_clause(c, namer);
+    body := body + [c'];
+  }
   r' := Rule(head, body);
 }
 
-method find_matching_rules(c:Clause, prog:Program) returns (matches: seq<(Rule, Substitution)>) 
+method find_matching_rules(c:Clause, prog:Program, namer:UniqueNamer) returns (matches: seq<(Rule, Substitution)>) 
+  requires namer.valid()
+  modifies namer
+  ensures namer.valid()
 {
   matches := [];
   // Find rules that might apply
-  for j := 0 to |prog| {
+  for j := 0 to |prog| 
+    invariant namer.valid()
+  {
     var rule := prog[j];
-    var rule' := make_vars_unique(rule, 0);   // TODO: Add a proper counter
+    var rule' := make_vars_unique(rule, namer);
     var uresult := unify(rule'.head, c);
     match uresult {
       case None => 
@@ -246,12 +368,14 @@ method print_node(node:SldNode) {
 method query(prog:Program, query:Rule) returns (b:bool)
   requires |query.body| > 0
 {
+  var namer := new UniqueNamer();
   var stack: seq<SldNode> := [SldNode({mk_clause_pattern(query.head)}, query.body)];
   //var goals := {};
   var bound := 0x1_0000_0000;
   while |stack| > 0 && bound > 0 
+    invariant namer.valid()
     decreases bound
-    invariant forall i :: 0 <= i < |stack| ==> stack[i].valid()
+    invariant forall i :: 0 <= i < |stack| ==> stack[i].valid()  
   {
     var node := stack[0];
     //print "Processing node: ", node, "\n";
@@ -265,13 +389,14 @@ method query(prog:Program, query:Rule) returns (b:bool)
       // This is a dead end, since it's trying to make us loop
       // by solving a goal we're already trying to solve
     } else {
-      var matches := find_matching_rules(clause, prog);
+      var matches := find_matching_rules(clause, prog, namer);
       if |matches| == 0 {
         // We can't make any progress on this branch, so stop here
         // Signal failure by stopping to process this clause set?
       } else {
         for i := 0 to |matches| 
           invariant forall i :: 0 <= i < |stack| ==> stack[i].valid()
+          invariant namer.valid()
         {
           var (rule, sub) := matches[i];        
           var rule_body := apply_sub_clauses(sub, rule.body);
