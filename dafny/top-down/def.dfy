@@ -127,21 +127,24 @@ method unify_terms(head:seq<Term>, target:seq<Term>) returns (s:Option<Substitut
     match (h, t) {
       case (Const(hc), Const(tc)) => if hc != tc { return None; }
       case (Var(_), Const(_)) => sub := sub[h := t];
-      case (Const(_), Var(_)) => return None;
+      case (Const(_), Var(_)) => sub := sub[t := h];
       case (Var(_), Var(_)) => sub := sub[h := t];
     }
   }
   return Some(sub);
 }
 
-method unify(c1:Clause, c2:Clause) returns (s:Option<Substitution>)
+method unify(head:Clause, target:Clause) returns (s:Option<Substitution>)
 {
-  if c1.name != c2.name || |c1.terms| != |c2.terms| {
+  if head.name != target.name || |head.terms| != |target.terms| {
     return None;
   } else { 
-    s := unify_terms(c1.terms, c2.terms);   
+    s := unify_terms(head.terms, target.terms);   
   }
 }
+
+method make_vars_unique(r:Rule, counter:int) returns (r': Rule)
+
 
 method find_matching_rules(c:Clause, prog:Program) returns (matches: seq<(Rule, Substitution)>) 
 {
@@ -149,44 +152,69 @@ method find_matching_rules(c:Clause, prog:Program) returns (matches: seq<(Rule, 
   // Find rules that might apply
   for j := 0 to |prog| {
     var rule := prog[j];
-    var uresult := unify(c, rule.head);
+    var rule' := make_vars_unique(rule, 0);   // TODO: Add a proper counter
+    var uresult := unify(rule'.head, c);
     match uresult {
       case None => 
-      case Some(sub) => matches := matches + [(rule, sub)];
+      case Some(sub) => matches := matches + [(rule', sub)];
     }
   }
 }
 
-type KnowledgeBase = seq<Fact>
+function method apply_sub_clause(sub:Substitution, c:Clause) : Clause
+{
+  var new_terms := 
+    seq(|c.terms|, 
+        i requires 0 <= i < |c.terms| => 
+          var t := c.terms[i];
+          if t in sub then sub[t] else t);
+  Clause(c.name, new_terms)
+}
+            
+method apply_sub_clauses(sub:Substitution, clauses:seq<Clause>) returns (s:seq<Clause>)
+{
+  s := seq(|clauses|, 
+           i requires 0 <= i < |clauses| => 
+            var c := clauses[i];
+            apply_sub_clause(sub, c));          
+}
 
 method query(prog:Program, query:Rule) returns (b:bool)
+  requires |query.body| > 0
 {
   var stack: seq<seq<Clause>> := [query.body];
-  while |stack| > 0 {
+  var bound := 0x1_0000_0000;
+  while |stack| > 0 && bound > 0 
+    decreases bound
+    invariant forall i :: 0 <= i < |stack| ==> |stack[i]| > 0
+  {
     var clauses := stack[0];
-    stack := stack[1..];
+    stack := stack[1..];    
     
     // Process the first clause first (TODO: Choose more strategically)
-    assume |clauses| > 0;   // TODO: Make this an invariant on the loop
+    assert |clauses| > 0;   // TODO: Make this an invariant on the loop
     var clause := clauses[0];
     var matches := find_matching_rules(clause, prog);
     if |matches| == 0 {
       // We can't make any progress on this branch, so stop here
       // How do we signal failure?  Just drop the clause?
     } else {
-      for i := 0 to |matches| {
+      for i := 0 to |matches| 
+        invariant forall i :: 0 <= i < |stack| ==> |stack[i]| > 0
+      {
         var (rule, sub) := matches[i];
         // TODO: Probably not the same sub in both of these cases
-        var rule_body := apply_sub(sub, rule.body);
-        var remaining_clauses := apply_sub(sub, clauses[1..]);
+        var rule_body := apply_sub_clauses(sub, rule.body);
+        var remaining_clauses := apply_sub_clauses(sub, clauses[1..]);
         var new_clauses := rule_body + remaining_clauses;
         if |new_clauses| == 0 {
           // We've resolved everything down to basic facts!
           return true;
         }
-        stack := [new_clauses] + stack;
-      }
+        stack := [new_clauses] + stack;          
+      }      
     }
+    bound := bound - 1;
   }
   return false;
 }
