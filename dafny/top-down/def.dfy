@@ -143,8 +143,29 @@ method unify(head:Clause, target:Clause) returns (s:Option<Substitution>)
   }
 }
 
-method make_vars_unique(r:Rule, counter:int) returns (r': Rule)
+function method {:extern} int_to_string(i:int) : string
 
+function method make_vars_unique_clause(c:Clause, counter:int) : Clause
+{
+  var new_terms := 
+    seq(|c.terms|, 
+        i requires 0 <= i < |c.terms| => 
+          var t := c.terms[i];
+          match t 
+            case Const(_) => t
+            case Var(v) => Var(v + int_to_string(counter)));
+  Clause(c.name, new_terms)  
+}
+
+method make_vars_unique(r:Rule, counter:int) returns (r': Rule)
+{
+  var head := make_vars_unique_clause(r.head, counter);
+  var body := seq(|r.body|, 
+           i requires 0 <= i < |r.body| => 
+            var c := r.body[i];
+            make_vars_unique_clause(c, counter));
+  r' := Rule(head, body);
+}
 
 method find_matching_rules(c:Clause, prog:Program) returns (matches: seq<(Rule, Substitution)>) 
 {
@@ -220,7 +241,7 @@ method query(prog:Program, query:Rule) returns (b:bool)
 }
 
 method check_rule(r:Rule) returns (b:bool)
-  ensures |r.body| > 0
+  ensures b == (|r.body| > 0)
 {
   b := |r.body| > 0;
 }
@@ -236,7 +257,7 @@ method run(raw_prog:Program)
   var valid_query := check_rule(q);
   //if valid_prog && valid_query {
   if valid_query {
-    var b, proof := query(prog, q);  
+    var b := query(prog, q);  
     print "Query returned ", b, "\n";
   } else {
     print "Sorry, that's an invalid program and/or query\n";

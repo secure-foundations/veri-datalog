@@ -3,4 +3,4 @@ father("adam", "mary").
 parent(X, Y) :- mother(X, Y).
 parent(X, Y) :- father(X, Y).
 proud(X) :- parent(X, Y), newborn(Y).
-query(Z) :- proud(Z).
+query(Z) :- proud(Z), newborn(Z).

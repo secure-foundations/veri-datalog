@@ -74,7 +74,9 @@ namespace _module
 
   public partial class __default
   {
-    
+    public static Dafny.ISequence<char> int__to__string(BigInteger i) {
+      return Dafny.Sequence<char>.FromString(i.ToString());
+    }
   }
   
 
