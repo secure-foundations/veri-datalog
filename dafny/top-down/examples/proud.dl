@@ -1,0 +1,6 @@
+newborn("Mary").
+father("Adam", "Mary").
+parent(X, Y) :- mother(X, Y).
+parent(X, Y) :- father(X, Y).
+proud(X) :- parent(X, Y), newborn(Y).
+

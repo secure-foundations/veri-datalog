@@ -218,3 +218,27 @@ method query(prog:Program, query:Rule) returns (b:bool)
   }
   return false;
 }
+
+method check_rule(r:Rule) returns (b:bool)
+  ensures |r.body| > 0
+{
+  b := |r.body| > 0;
+}
+
+method run(raw_prog:Program)
+  requires |raw_prog| > 0
+{
+  var prog := DropLast(raw_prog);
+  var q := Last(raw_prog);
+  //print "Program is: ", prog, "\n";
+  //print "Query is: ", q, "\n";
+  //var valid_prog := check_program(prog);
+  var valid_query := check_rule(q);
+  //if valid_prog && valid_query {
+  if valid_query {
+    var b, proof := query(prog, q);  
+    print "Query returned ", b, "\n";
+  } else {
+    print "Sorry, that's an invalid program and/or query\n";
+  }
+}
