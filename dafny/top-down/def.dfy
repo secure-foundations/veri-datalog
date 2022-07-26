@@ -218,7 +218,7 @@ class UniqueNamer {
     requires valid()
     modifies this
     ensures valid()
-    ensures old_names == old_names + new_names
+    ensures old_names == old(old_names) + old(new_names)
     ensures new_names == {}
   {
     reveal valid();
@@ -231,6 +231,7 @@ class UniqueNamer {
     requires valid()
     modifies this`new_names
     ensures valid()
+    ensures new_names == old(new_names) + {s'}
     ensures s' !in old_names
   {
     reveal valid();
@@ -245,14 +246,52 @@ class UniqueNamer {
   }
 }
 
+function terms_names(terms:seq<Term>) : set<string>
+{
+  set i | 0 <= i < |terms| && terms[i].Var? :: terms[i].s
+}
+
+function clause_names(c:Clause) : set<string>
+{
+  terms_names(c.terms)
+}
+
+function rule_names(r:Rule) : set<string> 
+{
+  clause_names(r.head) + clauses_names(r.body)
+}
+
+predicate clause_name_indexed(s:string, cs:seq<Clause>) {
+  exists i :: 0 <= i < |cs| && s in clause_names(cs[i])
+}
+
+function clauses_names(cs:seq<Clause>) : (strings:set<string>)
+  ensures forall i :: 0 <= i < |cs| ==> clause_names(cs[i]) <= strings
+  ensures forall s :: s in strings ==> clause_name_indexed(s, cs)
+{
+  if |cs| == 0 then {} else clause_names(cs[0]) + clauses_names(cs[1..])
+}
+
+lemma terms_name_extension(terms:seq<Term>, t:Term)
+  ensures terms_names(terms + [t]) == terms_names(terms) + if t.Var? then {t.s} else {}
+
+lemma clauses_name_extension(clauses:seq<Clause>, c:Clause)
+  ensures clauses_names(clauses + [c]) == clauses_names(clauses) + clause_names(c)
+
 method make_vars_unique_clause(c:Clause, namer:UniqueNamer) returns (c':Clause)
   requires namer.valid()
-  modifies namer
+  modifies namer`new_names
   ensures namer.valid()
+  ensures old(namer.new_names) <= namer.new_names
+  ensures clause_names(c') <= namer.new_names
+  ensures clause_names(c') !! namer.old_names
 {
   var new_terms := [];
   for i := 0 to |c.terms| 
     invariant namer.valid()
+    invariant old(namer.new_names) <= namer.new_names
+    invariant terms_names(new_terms) <= namer.new_names
+    invariant terms_names(new_terms) !! namer.old_names
   {
     var t := c.terms[i];
     var t';
@@ -262,6 +301,7 @@ method make_vars_unique_clause(c:Clause, namer:UniqueNamer) returns (c':Clause)
         var new_name := namer.mk_unique(v);
         t' := Var(new_name);
     }
+    terms_name_extension(new_terms, t');
     new_terms := new_terms + [t'];
   }
   c' := Clause(c.name, new_terms);
@@ -271,14 +311,21 @@ method make_vars_unique(r:Rule, namer:UniqueNamer) returns (r': Rule)
   requires namer.valid()
   modifies namer
   ensures namer.valid()
+  ensures rule_names(r') <= namer.new_names
+  ensures rule_names(r') !! old(namer.old_names)
 {
+  namer.inc();
   var head := make_vars_unique_clause(r.head, namer);
   var body := [];
   for i := 0 to |r.body| 
-    invariant namer.valid()
+    invariant namer.valid()    
+    invariant rule_names(Rule(head, body)) <= namer.new_names
+    invariant rule_names(Rule(head, body)) !! namer.old_names
+    invariant old(namer.old_names) <= namer.old_names 
   {
     var c := r.body[i];
     var c' := make_vars_unique_clause(c, namer);
+    clauses_name_extension(body, c');
     body := body + [c'];
   }
   r' := Rule(head, body);
@@ -359,10 +406,6 @@ datatype SldNode = SldNode(path: set<ClausePattern>, clauses:seq<Clause>)
   {
     clauses[1..]
   }
-}
-
-method print_node(node:SldNode) {
-
 }
 
 method query(prog:Program, query:Rule) returns (b:bool)
