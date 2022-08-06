@@ -313,15 +313,19 @@ method make_vars_unique(r:Rule, namer:UniqueNamer) returns (r': Rule)
   ensures namer.valid()
   ensures rule_names(r') <= namer.new_names
   ensures rule_names(r') !! old(namer.old_names)
+  ensures namer.old_names == old(namer.old_names) 
+  ensures |r.body| == |r'.body|
+  ensures namer.new_names >= old(namer.new_names)
 {
-  namer.inc();
+//  namer.inc();
   var head := make_vars_unique_clause(r.head, namer);
   var body := [];
   for i := 0 to |r.body| 
     invariant namer.valid()    
     invariant rule_names(Rule(head, body)) <= namer.new_names
     invariant rule_names(Rule(head, body)) !! namer.old_names
-    invariant old(namer.old_names) <= namer.old_names 
+    invariant namer.old_names == old(namer.old_names)
+    invariant |body| == i;
   {
     var c := r.body[i];
     var c' := make_vars_unique_clause(c, namer);
@@ -340,6 +344,7 @@ method find_matching_rules(c:Clause, prog:Program, namer:UniqueNamer) returns (m
   // Find rules that might apply
   for j := 0 to |prog| 
     invariant namer.valid()
+    invariant forall i :: 0 <= i < |matches| ==> var (r, s) := matches[i]; rule_names(r) <= namer.new_names
   {
     var rule := prog[j];
     var rule' := make_vars_unique(rule, namer);
@@ -351,7 +356,8 @@ method find_matching_rules(c:Clause, prog:Program, namer:UniqueNamer) returns (m
   }
 }
 
-function method apply_sub_clause(sub:Substitution, c:Clause) : Clause
+function method apply_sub_clause(sub:Substitution, c:Clause) : (c':Clause)
+  ensures clause_names(c') <= clause_names(c)
 {
   var new_terms := 
     seq(|c.terms|, 
@@ -406,19 +412,27 @@ datatype SldNode = SldNode(path: set<ClausePattern>, clauses:seq<Clause>)
   {
     clauses[1..]
   }
+
+  predicate clause_names_contained(s:set<string>) 
+  {
+    clauses_names(clauses) <= s
+  }
 }
 
 method query(prog:Program, query:Rule) returns (b:bool)
   requires |query.body| > 0
 {
   var namer := new UniqueNamer();
-  var stack: seq<SldNode> := [SldNode({mk_clause_pattern(query.head)}, query.body)];
+  var uniquified_query := make_vars_unique(query, namer);
+  namer.inc();
+  var stack: seq<SldNode> := [SldNode({mk_clause_pattern(uniquified_query.head)}, uniquified_query.body)];
   //var goals := {};
   var bound := 0x1_0000_0000;
   while |stack| > 0 && bound > 0 
     invariant namer.valid()
     decreases bound
-    invariant forall i :: 0 <= i < |stack| ==> stack[i].valid()  
+    invariant forall i :: 0 <= i < |stack| ==> stack[i].valid()
+    invariant forall i :: 0 <= i < |stack| ==> stack[i].clause_names_contained(namer.old_names)
   {
     var node := stack[0];
     //print "Processing node: ", node, "\n";
@@ -435,10 +449,12 @@ method query(prog:Program, query:Rule) returns (b:bool)
       var matches := find_matching_rules(clause, prog, namer);
       if |matches| == 0 {
         // We can't make any progress on this branch, so stop here
-        // Signal failure by stopping to process this clause set?
+        // Signal failure by ceasing to process this clause set?
       } else {
+        var new_nodes:seq<SldNode> := [];
         for i := 0 to |matches| 
-          invariant forall i :: 0 <= i < |stack| ==> stack[i].valid()
+          invariant forall i :: 0 <= i < |new_nodes| ==> new_nodes[i].valid()
+          invariant forall i :: 0 <= i < |new_nodes| ==> new_nodes[i].clause_names_contained(namer.new_names)
           invariant namer.valid()
         {
           var (rule, sub) := matches[i];        
@@ -451,8 +467,9 @@ method query(prog:Program, query:Rule) returns (b:bool)
           }          
           var new_path := node.path + { clause_pat };
           var new_node := SldNode(new_path, new_clauses);
-          stack := [new_node] + stack;
-        }      
+          new_nodes := [new_node] + new_nodes;
+        }
+        stack := new_nodes + stack;
       }
     }
     bound := bound - 1;
