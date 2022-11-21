@@ -275,6 +275,7 @@ function clauses_names(cs:seq<Clause>) : (strings:set<string>)
 lemma terms_name_extension(terms:seq<Term>, t:Term)
   ensures terms_names(terms + [t]) == terms_names(terms) + if t.Var? then {t.s} else {}
 
+
 lemma clauses_name_extension(clauses:seq<Clause>, c:Clause)
   ensures clauses_names(clauses + [c]) == clauses_names(clauses) + clause_names(c)
 
@@ -500,3 +501,26 @@ method run(raw_prog:Program)
     print "Sorry, that's an invalid program and/or query\n";
   }
 }
+
+/*
+
+Search procedure:
+
+global evar_map
+
+search(goal: SearchClause) returns (ghost proof: Option<ProofTree>, b: bool)
+  ensures b == True <==> (proof == Some(proof') && proof'.valid())
+{
+  // goal: R(arg1, arg2, ..., argN): where the args are evars in the evar_map
+  rules <- all rules with heads of the form R(arg1, arg2, ..., argN)
+  for rule in rules:
+    match unify(rule.Head, goal) with
+    | None => continue; // can't instantiate this rule due to conflicted ground terms
+    | Some(subst) =>
+      // subst is a map<var --> evar>
+      substitutedBody: seq<SearchClause> = evarify(rule.Body, subst);
+      for searchClause: SearchClause in substitutedBody:
+        search(searchClause)
+}
+
+*/

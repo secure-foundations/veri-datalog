@@ -2,7 +2,7 @@
 all: out def.cs
 
 out: datalog.g4
-	antlr -o out/ -Dlanguage=CSharp -no-listener -visitor datalog.g4  
+	antlr4 -o out/ -Dlanguage=CSharp -no-listener -visitor datalog.g4  
 
 bin/datalog.dll: datalog/datalog.csproj
 
