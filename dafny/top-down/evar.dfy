@@ -3,13 +3,22 @@ include "def.dfy"
 
 import opened Wrappers
 
-datatype Evar = Evar(e:int)
+// datatype Evar = Evar(e:int)
+type Evar = int
 
-// datatype Option<t> = Some (val:t) | None
+class EvarMap {
+    var evar_map: map<Evar, Option<string>>; // this string should be changed to whatever the const type is
+    var next_evar: Evar;
 
-class Evar2 {
-    var evar_map: map<int, Option<int>>;
-    var next_evar: int;
+    // TODO: Check if this implements a copy constructor
+    constructor(emap:EvarMap)
+        ensures this.evar_map == emap.evar_map
+        ensures this.next_evar == emap.next_evar
+        ensures fresh(this)
+    {
+        this.evar_map := emap.evar_map;
+        this.next_evar := emap.next_evar;
+    }
 
     predicate inv 
         reads this
@@ -18,7 +27,7 @@ class Evar2 {
         && (forall i :: i < next_evar <==> i in evar_map)
     }
 
-    method get_new_evar() returns (e:int) 
+    method get_new_evar() returns (e:Evar) 
         modifies this
         requires inv()
         ensures e == old(next_evar)
@@ -30,7 +39,7 @@ class Evar2 {
         return next_evar - 1;
     }
 
-    method resolve(e:int, v:int) returns ()
+    method resolve(e:Evar, v:string) returns ()
         modifies this
         requires inv()
         requires e in evar_map
@@ -38,7 +47,16 @@ class Evar2 {
         ensures evar_map == old(evar_map)[e := Some(v)]
     {
         evar_map := evar_map[e := Some(v)];
-    }    
+    }
+
+    method lookup(e:Evar) returns (o:Option<string>)
+    {
+        if e in evar_map {
+            return evar_map[e];
+        } else {
+            return None;
+        }
+    }
 }
 
-type EvarSubstitution = map<Term, Evar2>
+type EvarSubstitution = map<VarTerm, Evar>
