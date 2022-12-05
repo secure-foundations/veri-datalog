@@ -12,6 +12,6 @@ top-down.cs: top-down.dfy
 
 TEST = $(wildcard examples/*.dl) $(wildcard ../bottom-up/examples/*.dl)
 
-test:
+test: all
 	for f in $(TEST); do echo $$f; dotnet run --project datalog/datalog.csproj $$f; done
 

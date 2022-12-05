@@ -106,17 +106,22 @@ method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap)
 
 method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap) returns (b:bool)
 {
+    print "Searching on ", goal, "\n";
     // find all rules that match current goal
     var matching_rules := find_matching_rules(rules, goal);
+    print "\t matching_rules = ", matching_rules, "\n";
 
     // for all rules that match the current goal
     for i := 0 to |matching_rules|
         invariant true
     {
+        print "\t i = ", i, "\n"; 
         // var current_emap:EvarMap := emap; // TODO: Make a copy and not reference
         var current_emap:EvarMap := new EvarMap.Init(emap); // TODO: Check if this actually makes a copy
-        var rule:Rule := rules[i];
+        var rule:Rule := matching_rules[i];
+        print "\t matching_rule = ", rule, "\n";
         var option_subst := unify(rule.head, goal, emap);
+        print "\t option_subst = ", option_subst, "\n";
         var subst : EvarSubstitution;
         match option_subst {
             case None => continue;
@@ -182,7 +187,7 @@ method get_query_search_clause(query:Clause, emap:EvarMap) returns (sc:SearchCla
 method run_datalog(p:Program)
     requires |p| > 0
 {
-    var prog := DropLast(p); // remove the query from the list of rules
+    var prog := p; // remove the query from the list of rules
     var query_rule := Last(p);
 
     var emap:EvarMap := new EvarMap();
