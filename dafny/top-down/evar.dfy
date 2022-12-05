@@ -1,5 +1,5 @@
 include "std-lib/src/Wrappers.dfy"
-include "def.dfy"
+include "definitions.dfy"
 
 import opened Wrappers
 

@@ -1,4 +1,4 @@
-include "def.dfy"
+include "definitions.dfy"
 include "evar.dfy"
 include "search_clause.dfy"
 include "std-lib/src/Wrappers.dfy"
