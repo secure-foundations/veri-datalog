@@ -1,0 +1,183 @@
+newborn("mary").
+father("adam", "mary").
+parent(X, Y) :- mother(X, Y).
+parent(X, Y) :- father(X, Y).
+proud(X) :- parent(X, Y), newborn(Y).
+query(Z) :- proud(Z,Y), newborn(Z).
+
+////////////////////////////////
+
+bar("haha")
+foo(X) :- bar(X)
+query(Z) :- foo(Z)
+
+start with query(Z), get query(evar1) because there are variables (forall variables in this clause make new evars)
+then instantiate/expand foo using subst // basically iterating oer all clauses in query's body
+    foo has variables. therefore, call evarify and evarify uses subst to get foo(evar1) from foo(Z)
+    now search(foo(evar1))
+
+    // at this point i have a list of evars used in foo (here only 1 tho)
+    create new substAAA for this level of the tree = X -> evar1 // here, i see that foo has a variable 'x' therefore i map it to the evar that I have used in foo already (obtained from search_clause.evars list)
+    instantiate/expand bar (this uses substAAA) // basically iterating oer all clauses in foo's body
+        now search(bar(evar1))
+
+        there are no variables, so no new 'subst' maps to be created therefore i call resolve on this evar
+        unify with bar("haha")
+            update evar1 -> Some("haha")
+
+
+//////////////////////////////
+
+method get_search_clause_from_normal_clause() : Clause -> SearchClause
+// TODO: Check if this is only for query clause or other clauses also
+
+q := get_search_clause_from_normal_clause(query_clause)
+e:bool := search(q)
+
+//////
+
+evar_map: []
+query_clause : Clause = query(Z)
+
+evar_map: [evar1->None]
+search_clause = {
+    name:string          = "query"
+    evar_terms:seq<Evar> = [evar1]
+    clause:Clause        = query(Z)
+    map: bijective_map   = ["Z" <-> evar1]
+}
+
+
+// first iteration of search on ^ 
+
+  // goal: R(arg1, arg2, ..., argN): where the args are evars in the evar_map
+  rules <- find_matching_rules(program, search_clause)
+===> rules = [Rule(head=("query", [Z]), body = [("proud", [Z,Y]), ("newborn", [Z])])]
+
+  for rule in rules: //
+===>  rule = Rule(head=("query", [Z]), body = [("proud", [Z,Y]), ("newborn", [Z])])
+    match unify(rule.Head, goal) with
+===> unify(rule.Head, goal) = Some(Z --> evar1)
+
+    | None => continue; // can't instantiate this rule due to conflicted ground terms
+    | Some(subst) =>
+===> subst = ([Z --> evar1])
+      // subst is a map<var --> evar>
+      substitutedBody: seq<SearchClause> = evarify(rule.Body, subst); // evarify() will update gloabl evarmap
+                                                                      // possible to detect conflits here
+===> [{name = "proud", evar_terms = [evar1, evar2], clause = proud(Z,Y), map = [Z <-> evar1, Y <-> evar2]}, 
+===>  {name = "newborn", evar_terms = [evar1, evar3], clause = newborn(Z, "haha"), map = [Z <-> evar1]}]
+===> evar_map = [evar1 -> None, evar2 -> None, evar3 -> Some("haha")]
+      for searchClause: SearchClause in substitutedBody:
+===>        searchClause = {name = "proud", evar_terms = [evar1], clause = proud(Z), map = [Z <-> evar1]}
+        b := search(searchClause)
+        if b == True return b else continue // finds ONE solution
+    return false
+
+//////
+evarify(body, subst)
+    for terms in s:
+        if term == evar then use it
+        else create_new_evar (and use it in its sibling nodes)
+
+
+method evarify(evar_map: evar_map, body: seq<Clause>, subst: map<Variable,Evar>) returns (s:seq<SearchClause>) 
+    requires evar_map.ok()
+    modifies evar_map
+    ensures evar_map.ok()
+{
+    search_clauses = []
+    for clause in body:
+        evar_terms = []
+        local_map = subst;
+        for term in clause.terms:
+            if term == Variable(v) 
+                if v in local_map && local_map(v) == ev
+                    evar_terms := evar_terms + [ev]
+                else if v !in local_map
+                    new_ev := new_evar() // evar_map[new_ev -> None]
+                    evar_terms := evar_terms + [new_ev]
+                    local_map.insert(key = v, value = new_ev)
+            else // term = Const(c)
+                let c be such that term = Const(c)
+                new_ev := new_evar()
+                evar_terms := evar_terms + [new_ev]
+                evar_map.resolve(new_ev, c)
+        search_clause = SearchClause(name = clause.name, evar_terms = evar_terms, clause = clause, map = local_map)
+        search_clauses := search_clauses + [search_clause]
+    
+    return search_clauses
+}
+// parent("haha")
+// parent(X) // find what evar X maps to, then check what that evar maps to
+// globalevarmap = {X -> "blah"}
+
+
+
+///////////////////////////////////////////////
+
+
+method run_datalog(query:Clause)
+{
+    var search_clause:search_clause := convert_to_sc(query);
+    // query(evar1)
+    return search(search_clause);
+}
+
+method search(goal:search_clause)
+{
+    // get matching rules
+    rules := find_matching_rules(program, goal)
+    for rule in rules:
+        this_search_tree_evar_map = evar_map
+    // for rule in rules
+        // rule = query(Z) :- foo(Z) 
+        // goal = query(evar1)
+        unify(rule.Head, goal, this_search_tree_evar_map)
+            for i := 0 to |rule.Head.terms|
+                if rule.Head.terms[i] is variable
+                    subst += {rule.Head.terms[i].variable -> goal.terms[i]}
+                else it is a const(c) // conflicts can happen here
+                    e := look up evar map for goal.terms[i]
+                    if e.None? then resolve(e, Some(c)) // on search_tree_evar_map
+                    else if e.Some(c'), c' != c then ignore this rule altogther else continue
+
+        
+        for clauses in rule.body:
+            // clause: foo(Z)
+            sc, subst' := convert_to_sc/evarify(clause, subst, this_search_tree_evar_map) // new_evars are created here
+            subst = subst'
+        
+        // we have a list of sc's now
+        for sc in scs:
+            search(sc, this_search_tree_evar_map)
+
+}
+
+
+[evar1-->None]
+
+foo("a").
+foo("b").
+bar("b").
+query(X) :- foo(X), bar(X).
+
+1. goal = query(evar1), evar_map = [evar1 -> None]
+    ---> search(foo(evar1)), search(bar(evar1))
+
+2. goal = foo(evar1), evar_map = [evar1 -> None]
+    ---> Success. evar_map[evar1 -> Some("a")]
+
+
+
+3. goal
+
+
+
+
+
+
+
+--->
+
+n. goal = foo(evar1) ---> resolve with "b"

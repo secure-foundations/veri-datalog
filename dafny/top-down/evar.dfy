@@ -1,6 +1,11 @@
+include "std-lib/src/Wrappers.dfy"
+include "def.dfy"
+
+import opened Wrappers
+
 datatype Evar = Evar(e:int)
 
-datatype Option<t> = Some (val:t) | None
+// datatype Option<t> = Some (val:t) | None
 
 class Evar2 {
     var evar_map: map<int, Option<int>>;
@@ -35,3 +40,5 @@ class Evar2 {
         evar_map := evar_map[e := Some(v)];
     }    
 }
+
+type EvarSubstitution = map<Term, Evar2>
