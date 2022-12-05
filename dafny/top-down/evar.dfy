@@ -59,6 +59,7 @@ class EvarMap {
         ensures inv()
         ensures evar_map == old(evar_map)[e := Some(v)]
     {
+        print "\t\tresolving ", e, " to ", v, " in ", this.evar_map, "\n";
         evar_map := evar_map[e := Some(v)];
     }
 
