@@ -29,7 +29,7 @@ search(goal: SearchClause) returns (ghost proof: Option<ProofTree>, b: bool)
 
 */
 
-method find_matching_rules(rules: seq<Rule>, goal:SearchClause) returns (c:seq<Rules>)
+method find_matching_rules(rules: seq<Rule>, goal:SearchClause) returns (c:seq<Rule>)
 {
     var matching_rules : seq<Rule> := [];
     
@@ -46,27 +46,73 @@ method find_matching_rules(rules: seq<Rule>, goal:SearchClause) returns (c:seq<R
     return matching_rules;
 }
 
-// SearchClause : X(evarA, evarB)
-// Rule : X(a,b) = Y(b,c), Z(c,d) ...........
 
-
-method unify(head_clause:Clause, goal:SearchClause) returns (o:Option<EvarSubstitution>)
+method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Option<EvarSubstitution>)
 {
     // check if all terms in clause have correct mapping in goal.evar_terms
+    var subst:EvarSubstitution;
+    for i := 0 to |head_clause.terms| 
+        invariant true
+    {
+        if head_clause.terms[i].Var? {
+            var variableName := head_clause.terms[i].s;
+            subst := subst[head_clause.terms[i] := goal.evar_terms[i]];
+        } else if head_clause.terms[i].Const? {
+            var constant := head_clause.terms[i].c;
+            var e := emap.lookup(goal.evar_terms[i]);
+            match e {
+                case None => emap.resolve(goal.evar_terms[i], constant);
+                case Some(constant') =>
+                    if constant != constant {
+                        // ignore rule
+                        return None;
+                    }
+            }
+        }
+    }
+    return Some(subst);
 }
 
-method search (rules:seq<Rule>, goal:SearchClause) returns (b:bool)
-
+method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap) 
+    returns (sc:SearchClause, subst':EvarSubstitution)
 {
-    // for rule in rules:
+
+}
+
+method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap) returns (b:bool)
+{
+    // find all rules that match current goal
     var matching_rules := find_matching_rules(rules, goal);
 
+    // for all rules that match the current goal
     for i := 0 to |matching_rules|
         invariant true
     {
-        match unify(rule.head, goal) {
-            // case .. =>
-            // case .. =>
+        // var current_emap:EvarMap := emap; // TODO: Make a copy and not reference
+        var current_emap:EvarMap := new EvarMap(emap); // TODO: Check if this actually makes a copy
+        var rule:Rule := rules[i];
+        var option_subst := unify(rule.head, goal, emap);
+        var subst : EvarSubstitution;
+        match option_subst {
+            case None => continue;
+            case Some(subst') => subst := subst';
+        }
+
+        var search_clauses:seq<SearchClause> := [];
+        // TODO: What if rule.body is empty?
+        for j := 0 to |rule.body|
+            invariant true
+        {
+            var clause:Clause := rule.body[j];
+            var search_clause, subst' := evarify(clause, subst, current_emap);
+            subst := subst';
+            search_clauses := search_clauses + [search_clause];
+        }
+
+        for j := 0 to |search_clauses|
+            invariant true
+        {
+            var b' := search(rules, search_clauses[j], current_emap);
         }
     }
 }
