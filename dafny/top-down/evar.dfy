@@ -10,14 +10,26 @@ class EvarMap {
     var evar_map: map<Evar, Option<string>>; // this string should be changed to whatever the const type is
     var next_evar: Evar;
 
+    constructor()
+        ensures this.evar_map == map[]
+        ensures this.next_evar == 0
+        ensures fresh(this)
+    {
+        // TODO: If the below lines are not written, then will they take default values?
+        evar_map := map[];
+        next_evar := 0;
+        new;
+    }
+
     // TODO: Check if this implements a copy constructor
-    constructor(emap:EvarMap)
+    constructor Init(emap:EvarMap)
         ensures this.evar_map == emap.evar_map
         ensures this.next_evar == emap.next_evar
         ensures fresh(this)
     {
         this.evar_map := emap.evar_map;
         this.next_evar := emap.next_evar;
+        new;
     }
 
     predicate inv 
