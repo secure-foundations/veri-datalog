@@ -125,21 +125,38 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap) returns (b:bool
 
         var search_clauses:seq<SearchClause> := [];
         // TODO: What if rule.body is empty?
-        for j := 0 to |rule.body|
-            invariant true
-        {
-            var clause:Clause := rule.body[j];
-            var search_clause, subst' := evarify(clause, subst, current_emap);
-            subst := subst';
-            search_clauses := search_clauses + [search_clause];
-        }
+        if |rule.body| == 0 {
+            // TODO: Track ghost fact db
+            // assert(rule.Head in prog);
+            // assert(rule.head is in Facts()); // do some proof stuff
+            return true;
+        } else {
+            for j := 0 to |rule.body|
+                invariant true
+            {
+                var clause:Clause := rule.body[j];
+                var search_clause, subst' := evarify(clause, subst, current_emap);
+                subst := subst';
+                search_clauses := search_clauses + [search_clause];
+            }
 
-        for j := 0 to |search_clauses|
-            invariant true
-        {
-            var b' := search(rules, search_clauses[j], current_emap);
+            var flag := true;
+            for j := 0 to |search_clauses|
+                invariant true
+            {
+                var b' := search(rules, search_clauses[j], current_emap);
+                if !b' {
+                    flag := false;
+                }
+            }
+            // return true only if all search branches return true
+            // return true if at least one rule works successfully
+            if flag {
+                return true;
+            }
         }
     }
+    return false;
 }
 
 method get_query_search_clause(query:Clause, emap:EvarMap) returns (sc:SearchClause)
@@ -172,3 +189,22 @@ method run_datalog(p:Program)
     var query_sc:SearchClause := get_query_search_clause(query_rule.head, emap);
     var b := search(prog, query_sc, emap);
 }
+
+
+// method run(raw_prog:Program)
+//   requires |raw_prog| > 0
+// {
+//   var prog := DropLast(raw_prog);
+//   var q := Last(raw_prog);
+//   //print "Program is: ", prog, "\n";
+//   //print "Query is: ", q, "\n";
+//   //var valid_prog := check_program(prog);
+//   var valid_query := check_rule(q);
+//   //if valid_prog && valid_query {
+//   if valid_query {
+//     var b := query(prog, q);  
+//     print "Query returned ", b, "\n";
+//   } else {
+//     print "Sorry, that's an invalid program and/or query\n";
+//   }
+// }

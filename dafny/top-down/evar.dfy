@@ -44,6 +44,7 @@ class EvarMap {
         requires inv()
         ensures e == old(next_evar)
         ensures next_evar == old(next_evar) + 1
+        ensures evar_map == old(evar_map)[e := None]
         ensures inv()
     {
         evar_map := evar_map[next_evar := None];
