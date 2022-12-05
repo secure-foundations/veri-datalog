@@ -1,5 +1,5 @@
 
-all: out def.cs
+all: out top-down.cs bin/datalog.dll
 
 out: datalog.g4
 	antlr4 -o out/ -Dlanguage=CSharp -no-listener -visitor datalog.g4  
@@ -7,8 +7,8 @@ out: datalog.g4
 bin/datalog.dll: datalog/datalog.csproj
 
 
-def.cs: def.dfy
-	dafny /noVerify /compile:0 /spillTargetCode:3 def.dfy 
+top-down.cs: top-down.dfy
+	dafny /noVerify /compile:0 /spillTargetCode:3 top-down.dfy 
 
 TEST = $(wildcard examples/*.dl) $(wildcard ../bottom-up/examples/*.dl)
 

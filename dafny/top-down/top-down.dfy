@@ -188,6 +188,7 @@ method run_datalog(p:Program)
     var emap:EvarMap := new EvarMap();
     var query_sc:SearchClause := get_query_search_clause(query_rule.head, emap);
     var b := search(prog, query_sc, emap);
+    print "Query returned ", b, "\n";
 }
 
 

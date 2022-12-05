@@ -10,7 +10,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <Compile Include="..\def.cs">
+      <Compile Include="..\top-down.cs">
         <Link>def.cs</Link>
       </Compile>
       <Compile Include="..\out\datalogBaseVisitor.cs">

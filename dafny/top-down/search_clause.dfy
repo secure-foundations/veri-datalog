@@ -1,4 +1,3 @@
-include "def.dfy"
 include "evar.dfy"
 
 include "std-lib/src/Wrappers.dfy"

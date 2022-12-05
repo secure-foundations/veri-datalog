@@ -25,7 +25,7 @@ namespace MiniC
         var parse_tree = parser.program();
         var ast_builder = new AstBuilder();
         var prog = (Sequence<_module.Rule>)ast_builder.VisitProgram(parse_tree);
-        _module.__default.run(prog);
+        _module.__default.run__datalog(prog);
         
       }  catch (Exception e) {
         Console.WriteLine(e.Message);
