@@ -78,7 +78,7 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
     return Some(subst),emap;
 }
 
-method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap) 
+method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap, rule:Rule) 
     returns (sc:SearchClause, subst':EvarSubstitution)
 {
     subst' := subst;
@@ -106,7 +106,7 @@ method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap)
         }
     }
 
-    sc := SearchClause(clause.name, evar_terms);
+    sc := SearchClause(clause.name, evar_terms, rule);
 }
 
 method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap) returns (b:bool, e:EvarMap)
@@ -146,7 +146,7 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap) returns (b:bool
                 invariant true
             {
                 var clause:Clause := rule.body[j];
-                var search_clause, subst' := evarify(clause, subst, current_emap);
+                var search_clause, subst' := evarify(clause, subst, current_emap, rule);
                 subst := subst';
                 search_clauses := search_clauses + [search_clause];
             }
