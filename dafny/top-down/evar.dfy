@@ -4,7 +4,7 @@ include "definitions.dfy"
 import opened Wrappers
 
 // datatype Evar = Evar(e:int)
-type Evar = int
+type Evar = nat
 
 class EvarMap {
     var evar_map: map<Evar, Option<string>>; // this string should be changed to whatever the const type is
@@ -14,6 +14,7 @@ class EvarMap {
         ensures this.evar_map == map[]
         ensures this.next_evar == 0
         ensures fresh(this)
+        ensures inv()
     {
         // TODO: If the below lines are not written, then will they take default values?
         evar_map := map[];
@@ -35,8 +36,9 @@ class EvarMap {
     predicate inv 
         reads this
     {
-        (next_evar !in  evar_map)
-        && (forall i :: i < next_evar <==> i in evar_map)
+        && (next_evar >= 0)
+        && (next_evar !in  evar_map)
+        && (forall i:nat :: i < next_evar <==> i in evar_map)
     }
 
     method get_new_evar() returns (e:Evar) 

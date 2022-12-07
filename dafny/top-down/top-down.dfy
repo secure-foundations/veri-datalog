@@ -106,7 +106,7 @@ method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap, rule:Rule)
         }
     }
 
-    sc := SearchClause(clause.name, evar_terms, rule);
+    sc := SearchClause(clause.name, evar_terms, rule, subst');
 }
 
 method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap) returns (b:bool, e:EvarMap)
@@ -172,32 +172,38 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap) returns (b:bool
 }
 
 method get_query_search_clause(query:Clause, emap:EvarMap) returns (sc:SearchClause)
+    requires emap.inv()
+    modifies emap
+    ensures emap.inv()
 {
     var evar_terms:seq<Evar> := [];
+    var subst: EvarSubstitution := map[];
     for i := 0 to |query.terms|
         invariant true
+        invariant emap.inv()
     {
         var term := query.terms[i];
         match term {
             case Var(s) => {
-                var new_ev := emap.get_new_evar();
-                evar_terms := evar_terms + [new_ev];
-                // subst' := subst'[term := new_ev];
-            }
+                        var new_ev := emap.get_new_evar();
+                        evar_terms := evar_terms + [new_ev];
+                        subst := subst[term := new_ev];
+                    }
             case Const(c) => {} // TODO: Create new evars and map them to the const?
         }
     }
 
-    sc := SearchClause(query.name, evar_terms);
+    sc := SearchClause(query.name, evar_terms, Rule(query, []), subst);
 }
 
 method run_datalog(p:Program)
     requires |p| > 0
 {
-    var prog := p; // remove the query from the list of rules
+    var prog := p;
     var query_rule := Last(p);
 
     var emap:EvarMap := new EvarMap();
+    assert emap.inv();
     var query_sc:SearchClause := get_query_search_clause(query_rule.head, emap);
     var b,_ := search(prog, query_sc, emap);
     print "Query returned ", b, "\n";
