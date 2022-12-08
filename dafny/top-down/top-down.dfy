@@ -54,13 +54,19 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
     requires goal.valid_emap(emap)
     modifies emap
     ensures emap.is_more_resolved(old(emap))
+    ensures goal.valid_emap(emap)
     ensures emap.inv()
+    ensures o.Some? ==> forall e :: e in o.value.Values ==> e in emap.evar_map
+    ensures forall e :: e in old(emap.evar_map) ==> e in emap.evar_map // TODO: Make this a predicate inside evar.dfy
+
 {
     // check if all terms in clause have correct mapping in goal.evar_terms
     var subst:EvarSubstitution := map[];
     for i := 0 to |head_clause.terms| 
         invariant emap.inv()
         invariant goal.valid_emap(emap)
+        invariant forall e :: e in subst.Values ==> e in emap.evar_map
+        invariant forall e :: e in old(emap.evar_map) ==> e in emap.evar_map // TODO: Make this a predicate inside evar.dfy
     {
         if head_clause.terms[i].Var? {
             print "a";
@@ -92,22 +98,32 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
 method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap) 
     returns (sc:SearchClause, subst':EvarSubstitution)
     requires emap.inv()
+    requires forall e :: e in subst.Values ==> e in emap.evar_map
     modifies emap
     ensures  emap.inv()
+    // TODO: Stronger post condition on emap
+    //ensures |emap.evar_map| > |old(emap.evar_map)| // TODO: Move this into EvarMap
     ensures  sc.valid_emap(emap)
+    ensures  forall e :: e in subst'.Values ==> e in emap.evar_map
+    ensures forall e :: e in old(emap.evar_map) ==> e in emap.evar_map // TODO: Make this a predicate inside evar.dfy
+    ensures forall s :: s in subst ==> s in subst'
 {
     subst' := subst;
     var evar_terms:seq<Evar> := [];
     for i := 0 to |clause.terms|
         invariant emap.inv()
+        invariant forall e :: e in evar_terms ==> e in emap.evar_map
+        invariant forall e :: e in subst'.Values ==> e in emap.evar_map
+        invariant forall e :: e in old(emap.evar_map) ==> e in emap.evar_map 
+        invariant forall s :: s in subst ==> s in subst'
     {
         var term := clause.terms[i];
         match term {
             case Var(s) => {
-                if term in subst.Keys {
-                    var ev := subst[term];
+                if term in subst'.Keys {
+                    var ev := subst'[term]; // this should imply ev in emap.evar_map
                     evar_terms := evar_terms + [ev];
-                } else if term !in subst {
+                } else if term !in subst' {
                     var new_ev := emap.get_new_evar();
                     evar_terms := evar_terms + [new_ev];
                     subst' := subst'[term := new_ev];
@@ -127,8 +143,11 @@ method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap)
 method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) returns (b:bool)//, e:EvarMap)
     requires emap.inv()
     requires goal.valid_emap(emap)
-    // modifies emap
+    // ensures o.Some? ==> forall e :: e in o.value.Values ==> e in emap.evar_map
+    modifies emap
     ensures emap.inv()
+    ensures goal.valid_emap(emap)
+    ensures forall e :: e in old(emap.evar_map) ==> e in emap.evar_map // TODO: Make this a predicate inside evar.dfy
     decreases depth
 {
     if (depth == 0) {
@@ -141,19 +160,24 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
     var matching_rules := find_matching_rules(rules, goal);
     print "\t matching_rules = ", matching_rules, "\n";
 
+    assert(goal.valid_emap(emap));
+
     // for all rules that match the current goal
     for i := 0 to |matching_rules|
         invariant emap.inv()
-        invariant goal.valid_emap(emap)
+        // invariant goal.valid_emap(emap)
+        invariant forall e :: e in old(emap.evar_map) ==> e in emap.evar_map // TODO: Make this a predicate inside evar.dfy
         // invariant e.inv()
     {
         print "\t i = ", i, "\n"; 
         // var current_emap:EvarMap := emap; // TODO: Make a copy and not reference
         var current_emap:EvarMap := new EvarMap.Init(emap); // TODO: Check if this actually makes a copy
-        // assert current_emap.inv();
+        assert (forall e :: e in emap.evar_map ==> e in current_emap.evar_map);
+        assert current_emap.inv();
         var rule:Rule := matching_rules[i];
         print "\t matching_rule = ", rule, "\n";
-        var option_subst := unify(rule.head, goal, current_emap);
+        var option_subst := unify(rule.head, goal, emap);
+        assert(goal.valid_emap(emap));
         print "\t option_subst = ", option_subst, "\n";
         //current_emap := e';
         var subst : EvarSubstitution;
@@ -161,6 +185,7 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
             case None => continue;
             case Some(subst') => subst := subst';
         }
+        assert emap.inv();
         assert current_emap.inv();
 
         var search_clauses:seq<SearchClause> := [];
@@ -171,21 +196,35 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
             // assert(rule.head is in Facts()); // do some proof stuff
             return true;
         } else {
-            assert current_emap.inv();
+            assert emap.inv();
             for j := 0 to |rule.body|
+                invariant emap.inv()
                 invariant current_emap.inv()
+                // invariant current_emap.evar_map == old(current_emap.evar_map)
+                invariant forall sc :: sc in search_clauses ==> sc.valid_emap(emap)
+                invariant forall e :: e in subst.Values ==> e in emap.evar_map
+                invariant forall e :: e in old(emap.evar_map) ==> e in emap.evar_map // TODO: Make this a predicate inside evar.dfy
+                invariant forall e :: e in old(emap.evar_map) ==> e in current_emap.evar_map // TODO: Make this a predicate inside evar.dfy
+                // invariant goal.valid_emap(emap);
             {
                 var clause:Clause := rule.body[j];
-                var search_clause, subst' := evarify(clause, subst, current_emap);
+                var search_clause, subst' := evarify(clause, subst, emap);
                 subst := subst';
                 search_clauses := search_clauses + [search_clause];
             }
+            // assert(goal.valid_emap(emap));
 
             var flag := true;
             for j := 0 to |search_clauses|
+                invariant emap.inv()
                 invariant current_emap.inv()
+                // invariant current_emap == old(current_emap)
+                invariant forall sc :: sc in search_clauses ==> sc.valid_emap(emap)
+                invariant forall e :: e in old(emap.evar_map) ==> e in emap.evar_map // TODO: Make this a predicate inside evar.dfy
+                invariant forall e :: e in old(emap.evar_map) ==> e in current_emap.evar_map // TODO: Make this a predicate inside evar.dfy
+                // invariant goal.valid_emap(emap)
             {
-                var b' := search(rules, search_clauses[j], current_emap, depth - 1);
+                var b' := search(rules, search_clauses[j], emap, depth - 1);
                 if !b' {
                     flag := false;
                 }
@@ -196,7 +235,14 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
             if flag {
                 return true;
             }
+            // assert(goal.valid_emap(emap));
         }
+        // emap := current_emap;
+        assert(emap.inv());
+        assert(current_emap.inv());
+        // assert(goal.valid_emap(emap));
+        emap.copy(current_emap);
+        //current_emap := new EvarMap.Init(emap);
     }
     return false;
 }
@@ -205,12 +251,14 @@ method get_query_search_clause(query:Clause, emap:EvarMap) returns (sc:SearchCla
     requires emap.inv()
     modifies emap
     ensures emap.inv()
+    ensures sc.valid_emap(emap)
 {
     var evar_terms:seq<Evar> := [];
     var subst: EvarSubstitution := map[];
     for i := 0 to |query.terms|
-        invariant true
         invariant emap.inv()
+        invariant forall e:Evar :: e in evar_terms ==> e in emap.evar_map
+        invariant forall e:Evar :: e in subst.Values ==> e in emap.evar_map
     {
         var term := query.terms[i];
         match term {
@@ -235,7 +283,7 @@ method run_datalog(p:Program)
     var emap:EvarMap := new EvarMap();
     assert emap.inv();
     var query_sc:SearchClause := get_query_search_clause(query_rule.head, emap);
-    var b,_ := search(prog, query_sc, emap, 0x1_0000_0000);
+    var b := search(prog, query_sc, emap, 0x1_0000_0000);
     print "Query returned ", b, "\n";
 }
 

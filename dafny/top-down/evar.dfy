@@ -28,6 +28,7 @@ class EvarMap {
         ensures this.evar_map == emap.evar_map
         ensures this.next_evar == emap.next_evar
         ensures fresh(this)
+        ensures this != emap
         ensures this.inv()
     {
         this.evar_map := emap.evar_map;
@@ -49,6 +50,8 @@ class EvarMap {
         ensures e == old(next_evar)
         ensures next_evar == old(next_evar) + 1
         ensures evar_map == old(evar_map)[e := None]
+        ensures |evar_map| == |old(evar_map)| + 1 // TODO: Can probably remove this
+        ensures evar_map.Keys == old(evar_map).Keys + {e}
         ensures inv()
     {
         evar_map := evar_map[next_evar := None];
@@ -62,6 +65,8 @@ class EvarMap {
         requires e in evar_map
         ensures inv()
         ensures evar_map == old(evar_map)[e := Some(v)]
+        ensures |evar_map| == |old(evar_map)| // TODO: Can remove this
+        ensures evar_map.Keys == old(evar_map).Keys
     {
         print "\t\tresolving ", e, " to ", v, " in ", this.evar_map, "\n";
         evar_map := evar_map[e := Some(v)];
@@ -74,6 +79,19 @@ class EvarMap {
         ensures o == evar_map[e]
     {
         return evar_map[e];
+    }
+
+    method copy(emap:EvarMap) returns ()
+        requires emap.inv()
+        requires this.inv()
+        requires this != emap
+        modifies this
+        ensures this.evar_map == emap.evar_map
+        ensures this.next_evar == emap.next_evar
+        ensures this.inv()
+    {
+        this.evar_map := emap.evar_map;
+        this.next_evar := emap.next_evar;
     }
 
     predicate is_more_resolved(emap:EvarMap)
