@@ -68,6 +68,7 @@ class EvarMap {
         ensures evar_map == old(evar_map)[e := Some(v)]
         ensures |evar_map| == |old(evar_map)| // TODO: Can remove this
         ensures evar_map.Keys == old(evar_map).Keys
+        ensures this.is_more_resolved()
     {
         print "\t\tresolving ", e, " to ", v, " in ", this.evar_map, "\n";
         evar_map := evar_map[e := Some(v)];
@@ -95,14 +96,20 @@ class EvarMap {
         this.next_evar := emap.next_evar;
     }
 
-    predicate is_more_resolved(emap:EvarMap)
-        reads this, emap
+    twostate predicate is_more_resolved()
+        reads this
     {
         // no new keys added
-        this.evar_map.Keys == emap.evar_map.Keys
+        this.evar_map.Keys == old(this.evar_map).Keys
 
         // all values that are Some, remain Some with the same const
-        && forall e:Evar | e in this.evar_map :: (this.evar_map[e].Some? ==> this.evar_map[e] == emap.evar_map[e])
+        && forall e:Evar | e in this.evar_map :: (old(this.evar_map)[e].Some? ==> this.evar_map[e] == this.evar_map[e])
+    }
+
+    twostate predicate monotonically_increasing()
+        reads this
+    {
+        forall e :: e in old(this.evar_map) ==> e in this.evar_map // TODO: Is a subset check better for the verifier?
     }
 }
 
