@@ -30,11 +30,12 @@ search(goal: SearchClause) returns (ghost proof: Option<ProofTree>, b: bool)
 */
 
 method find_matching_rules(rules: seq<Rule>, goal:SearchClause) returns (c:seq<Rule>)
+    ensures forall r:Rule :: r in c ==> r.head.name == goal.name && |r.head.terms| == |goal.evar_terms|
 {
     var matching_rules : seq<Rule> := [];
     
     for i := 0 to |rules| // for rule in rules:
-        invariant true
+        invariant forall r:Rule :: r in matching_rules ==> r.head.name == goal.name && |r.head.terms| == |goal.evar_terms|
         // rules[i].name != goal.name || |rules[i].terms| != |goal.terms|
     {
         var rule := rules[i];
@@ -47,14 +48,19 @@ method find_matching_rules(rules: seq<Rule>, goal:SearchClause) returns (c:seq<R
 }
 
 
-method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Option<EvarSubstitution>, e:EvarMap)
+method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Option<EvarSubstitution>)//, e:EvarMap)
     requires emap.inv()
-    ensures e.inv()
+    requires |head_clause.terms| == |goal.evar_terms|
+    requires goal.valid_emap(emap)
+    modifies emap
+    ensures emap.is_more_resolved(old(emap))
+    ensures emap.inv()
 {
     // check if all terms in clause have correct mapping in goal.evar_terms
     var subst:EvarSubstitution := map[];
     for i := 0 to |head_clause.terms| 
-        invariant true
+        invariant emap.inv()
+        invariant goal.valid_emap(emap)
     {
         if head_clause.terms[i].Var? {
             print "a";
@@ -65,11 +71,14 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
             var constant := head_clause.terms[i].c;
             var e := emap.lookup(goal.evar_terms[i]);
             match e {
-                case None => emap.resolve(goal.evar_terms[i], constant);
+                case None => {
+                    emap.resolve(goal.evar_terms[i], constant);
+                    assert(emap.inv());
+                }
                 case Some(constant') =>
                     if constant != constant' {
                         // ignore rule
-                        return None,emap;
+                        return None;
                     }
                     // } else {
                     //     subst := subst[head_clause.terms[i] := goal.evar_terms[i]];
@@ -77,12 +86,15 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
             }
         }
     }
-    return Some(subst),emap;
+    return Some(subst);
 }
 
-method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap, rule:Rule) 
+method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap) 
     returns (sc:SearchClause, subst':EvarSubstitution)
-    requires emap.inv();
+    requires emap.inv()
+    modifies emap
+    ensures  emap.inv()
+    ensures  sc.valid_emap(emap)
 {
     subst' := subst;
     var evar_terms:seq<Evar> := [];
@@ -109,18 +121,19 @@ method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap, rule:Rule)
         }
     }
 
-    sc := SearchClause(clause.name, evar_terms, rule, subst');
+    sc := SearchClause(clause.name, evar_terms, clause, subst');
 }
 
-method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) returns (b:bool, e:EvarMap)
+method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) returns (b:bool)//, e:EvarMap)
     requires emap.inv()
-    modifies emap
-    ensures e.inv()
+    requires goal.valid_emap(emap)
+    // modifies emap
+    ensures emap.inv()
     decreases depth
 {
     if (depth == 0) {
         b := false;
-        e := emap;
+        // e := emap;
         return;
     }
     print "Searching on ", goal, " with emap ", emap.evar_map, "\n";
@@ -131,16 +144,18 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
     // for all rules that match the current goal
     for i := 0 to |matching_rules|
         invariant emap.inv()
+        invariant goal.valid_emap(emap)
+        // invariant e.inv()
     {
         print "\t i = ", i, "\n"; 
         // var current_emap:EvarMap := emap; // TODO: Make a copy and not reference
         var current_emap:EvarMap := new EvarMap.Init(emap); // TODO: Check if this actually makes a copy
-        assert current_emap.inv();
+        // assert current_emap.inv();
         var rule:Rule := matching_rules[i];
         print "\t matching_rule = ", rule, "\n";
-        var option_subst, e' := unify(rule.head, goal, emap);
+        var option_subst := unify(rule.head, goal, current_emap);
         print "\t option_subst = ", option_subst, "\n";
-        current_emap := e';
+        //current_emap := e';
         var subst : EvarSubstitution;
         match option_subst {
             case None => continue;
@@ -154,36 +169,36 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
             // TODO: Track ghost fact db
             // assert(rule.Head in prog);
             // assert(rule.head is in Facts()); // do some proof stuff
-            return true, current_emap;
+            return true;
         } else {
             assert current_emap.inv();
             for j := 0 to |rule.body|
                 invariant current_emap.inv()
             {
                 var clause:Clause := rule.body[j];
-                var search_clause, subst' := evarify(clause, subst, current_emap, rule);
+                var search_clause, subst' := evarify(clause, subst, current_emap);
                 subst := subst';
                 search_clauses := search_clauses + [search_clause];
             }
 
             var flag := true;
             for j := 0 to |search_clauses|
-                invariant true
+                invariant current_emap.inv()
             {
-                var b',e := search(rules, search_clauses[j], current_emap, depth - 1);
+                var b' := search(rules, search_clauses[j], current_emap, depth - 1);
                 if !b' {
                     flag := false;
                 }
-                current_emap := e;
+                // current_emap := e;
             }
             // return true only if all search branches return true
             // return true if at least one rule works successfully
             if flag {
-                return true, current_emap;
+                return true;
             }
         }
     }
-    return false, emap;
+    return false;
 }
 
 method get_query_search_clause(query:Clause, emap:EvarMap) returns (sc:SearchClause)
@@ -208,7 +223,7 @@ method get_query_search_clause(query:Clause, emap:EvarMap) returns (sc:SearchCla
         }
     }
 
-    sc := SearchClause(query.name, evar_terms, Rule(query, []), subst);
+    sc := SearchClause(query.name, evar_terms, query, subst);
 }
 
 method run_datalog(p:Program)

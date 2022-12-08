@@ -7,8 +7,21 @@ import opened Wrappers
 import opened Seq
 import opened BijectiveMap
 
-datatype SearchClause = SearchClause(name:string, evar_terms:seq<Evar>, rule: Rule, subst: EvarSubstitution)
+datatype SearchClause = SearchClause(name:string, evar_terms:seq<Evar>, clause: Clause, subst: EvarSubstitution)
 {
+    predicate valid_emap(emap: EvarMap) 
+        reads emap
+    {
+        && forall e:Evar :: e in evar_terms ==> e in emap.evar_map
+        && forall e:Evar :: e in subst.Values ==> e in emap.evar_map
+        // multiset(evar_terms) <= multiset(emap.evar_map.Keys)
+    }
+
+    predicate valid()
+    {
+        name == clause.name
+    }
+
     // predicate valid()
     // {
     //     rule.head.name == name

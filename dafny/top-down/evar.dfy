@@ -68,12 +68,22 @@ class EvarMap {
     }
 
     method lookup(e:Evar) returns (o:Option<string>)
+        requires inv()
+        requires e in evar_map
+        ensures inv()
+        ensures o == evar_map[e]
     {
-        if e in evar_map {
-            return evar_map[e];
-        } else {
-            return None;
-        }
+        return evar_map[e];
+    }
+
+    predicate is_more_resolved(emap:EvarMap)
+        reads this, emap
+    {
+        // no new keys added
+        this.evar_map.Keys == emap.evar_map.Keys
+
+        // all values that are Some, remain Some with the same const
+        && forall e:Evar | e in this.evar_map :: (this.evar_map[e].Some? ==> this.evar_map[e] == emap.evar_map[e])
     }
 }
 
