@@ -58,7 +58,7 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
     ensures emap.inv()
     ensures o.Some? ==> forall e :: e in o.value.Values ==> e in emap.evar_map
     ensures forall e :: e in old(emap.evar_map) ==> e in emap.evar_map // TODO: Make this a predicate inside evar.dfy
-
+    // ensures emap.monotonically_increasing()
 {
     // check if all terms in clause have correct mapping in goal.evar_terms
     var subst:EvarSubstitution := map[];
@@ -67,6 +67,7 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
         invariant goal.valid_emap(emap)
         invariant forall e :: e in subst.Values ==> e in emap.evar_map
         invariant forall e :: e in old(emap.evar_map) ==> e in emap.evar_map // TODO: Make this a predicate inside evar.dfy
+        // invariant emap.monotonically_increasing()
     {
         if head_clause.terms[i].Var? {
             print "a";
