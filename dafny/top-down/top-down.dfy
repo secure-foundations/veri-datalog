@@ -67,11 +67,11 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
         invariant emap.is_more_resolved()
     {
         if head_clause.terms[i].Var? {
-            print "a";
+            //print "a";
             var variableName := head_clause.terms[i].s;
             subst := subst[head_clause.terms[i] := goal.evar_terms[i]];
         } else if head_clause.terms[i].Const? {
-            print "b";
+            //print "b";
             var constant := head_clause.terms[i].c;
             var e := emap.lookup(goal.evar_terms[i]);
             match e {
@@ -164,10 +164,10 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
     if (depth == 0) {
         return false;
     }
-    print "Searching on ", goal, " with emap ", emap.evar_map, "\n";
+    //print "Searching on ", goal, " with emap ", emap.evar_map, "\n";
     // find all rules that match current goal
     var matching_rules := find_matching_rules(rules, goal);
-    print "\t matching_rules = ", matching_rules, "\n";
+    //print "\t matching_rules = ", matching_rules, "\n";
 
     // for all rules that match the current goal
     for i := 0 to |matching_rules|
@@ -175,13 +175,13 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
         // invariant goal.valid_emap(emap)
         invariant emap.monotonically_increasing() // invariant forall e :: e in old(emap.evar_map) ==> e in emap.evar_map
     {
-        print "\t i = ", i, "\n"; 
+        //print "\t i = ", i, "\n"; 
         var current_emap:EvarMap := new EvarMap.Init(emap); // TODO: Check if this actually makes a copy
         var rule:Rule := matching_rules[i];
-        print "\t matching_rule = ", rule, "\n";
+        //print "\t matching_rule = ", rule, "\n";
         var option_subst := unify(rule.head, goal, emap);
         
-        print "\t option_subst = ", option_subst, "\n";
+        //print "\t option_subst = ", option_subst, "\n";
         
         var subst : EvarSubstitution;
         match option_subst {

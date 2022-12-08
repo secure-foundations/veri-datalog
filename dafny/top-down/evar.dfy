@@ -70,7 +70,7 @@ class EvarMap {
         ensures evar_map.Keys == old(evar_map).Keys
         ensures this.is_more_resolved()
     {
-        print "\t\tresolving ", e, " to ", v, " in ", this.evar_map, "\n";
+        //print "\t\tresolving ", e, " to ", v, " in ", this.evar_map, "\n";
         evar_map := evar_map[e := Some(v)];
     }
 
