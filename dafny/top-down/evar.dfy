@@ -63,6 +63,7 @@ class EvarMap {
         modifies this
         requires inv()
         requires e in evar_map
+        requires evar_map[e] == None
         ensures inv()
         ensures evar_map == old(evar_map)[e := Some(v)]
         ensures |evar_map| == |old(evar_map)| // TODO: Can remove this

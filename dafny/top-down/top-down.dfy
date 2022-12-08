@@ -149,6 +149,22 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
     ensures goal.valid_emap(emap)
     ensures forall e :: e in old(emap.evar_map) ==> e in emap.evar_map // TODO: Make this a predicate inside evar.dfy
     decreases depth
+    // what the correct matching rule is (rule for which we returned true)
+    //   - maybe return a sequence of these rules
+    //   - build a 'substitution' map like Bryan using these rules
+    //       - a substitution is either a variable->evar or evar->const(resolve)
+    //   - ??
+    //   - reuse Bryan's spec
+    // ensures b ==> that rule works
+
+    // the different subst bi-maps are consistent // WRONG
+    // we should somehow say b==true ==> at no point we made the same evar resolve to two diff consts
+    // for each subst (at each instantiation of a rule down the tree), convert that subst into Bryan's substitution (using the 'global' evarmap)
+    //  -- keep a ghost state of seq<subst * rule> or a seq<applied_rules> * seq<subst for that rule>?
+    //  -- (var -> evar -> const) ==> (var -> const) like Bryan's substitution (a ground substitution)
+    //  -- do the above for ALL evars in our evarmap, the one for which search returns true (basically for all evars we want them to be present in substs)
+    //  --   at each proofstep, the number of evars for which the above stuff is not done decreases
+    // prove completeness of our substs? - we get a valid ProofStep for free?
 {
     if (depth == 0) {
         b := false;
