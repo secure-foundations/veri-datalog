@@ -111,6 +111,12 @@ class EvarMap {
     {
         forall e :: e in old(this.evar_map) ==> e in this.evar_map // TODO: Is a subset check better for the verifier?
     }
+
+    predicate fully_resolved() 
+        reads this
+    {
+        forall e :: e in evar_map ==> evar_map[e].Some?
+    }
 }
 
 type EvarSubstitution = map<VarTerm, Evar>

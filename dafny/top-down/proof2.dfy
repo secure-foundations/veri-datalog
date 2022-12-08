@@ -12,12 +12,52 @@ import opened Wrappers
 
 
 // TODO: Create another datastructure that ties 'subst' to 'rule'
-datatype ProofStep = ProofStep(subst:EvarSubstitution, rule:Rule, success_emap:EvarMap) {
-    predicate valid() {
-        exists e:Evar :: e in success_emap.evar_map && true
+datatype TopDownProofStep = ProofStep(subst:EvarSubstitution, rule:Rule, success_emap:EvarMap) {
+    predicate valid() 
+        reads success_emap
+    {
+        && forall e :: e in subst.Values ==> e in success_emap.evar_map
+        && success_emap.fully_resolved()
+        // exists e:Evar :: e in success_emap.evar_map && true
         // && subst.getreverse(e).Some?
         // && rule.head.substitution_complete(get_substitution_from_subst(subst, success_emap))
     }
+
+    function subst_of() : Substitution
+        reads success_emap
+        requires valid()
+    {
+        map v:VarTerm | v in subst.Keys :: Const(success_emap.evar_map[subst[v]].value)
+    }
 }
 
-type Proof = seq<ProofStep>
+type TopDownProof = seq<TopDownProofStep>
+
+
+/*
+
+Suppose we have used the rule:
+
+A(X, Y) :- B(X, Y), C(Y, Z), D(X, Z).
+
+to prove A("x","y").
+
+The recursive calls to search() should return proofs:
+    B(x,y) with factset1
+    C(y,z) with factset2
+    D(x,z) with factset3
+
+The proof of A(x, y) looks like:
+    ProofStep(subst = [X->x, Y->y, Z->z], rule = A(X,Y) :- ..., facts = factset1 \union factset2 \union factset3) 
+    ++ [proof of B(x,y) with factset1 \union factset2 \union factset3] 
+    ++ [proof of C(y,z) with factset2 \union factset3] 
+    ++ [proof of D(x,z) with factset3]
+
+==> Need to write a unionFactSet operation that flattens multiple proofs into one.
+
+Proof of validity for the ProofStep:
+    assert (B(x,y) in factset)      because B(x,y) in factset1
+    assert (C(y,z) in factset)      because C(y,z) in factset2
+    assert (D(x,z) in factset)      because D(x,z) in factset3
+(concreteness follows)
+*/
