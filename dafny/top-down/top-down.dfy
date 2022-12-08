@@ -48,6 +48,8 @@ method find_matching_rules(rules: seq<Rule>, goal:SearchClause) returns (c:seq<R
 
 
 method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Option<EvarSubstitution>, e:EvarMap)
+    requires emap.inv()
+    ensures e.inv()
 {
     // check if all terms in clause have correct mapping in goal.evar_terms
     var subst:EvarSubstitution := map[];
@@ -80,11 +82,12 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
 
 method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap, rule:Rule) 
     returns (sc:SearchClause, subst':EvarSubstitution)
+    requires emap.inv();
 {
     subst' := subst;
     var evar_terms:seq<Evar> := [];
     for i := 0 to |clause.terms|
-        invariant true
+        invariant emap.inv()
     {
         var term := clause.terms[i];
         match term {
@@ -109,8 +112,17 @@ method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap, rule:Rule)
     sc := SearchClause(clause.name, evar_terms, rule, subst');
 }
 
-method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap) returns (b:bool, e:EvarMap)
+method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) returns (b:bool, e:EvarMap)
+    requires emap.inv()
+    modifies emap
+    ensures e.inv()
+    decreases depth
 {
+    if (depth == 0) {
+        b := false;
+        e := emap;
+        return;
+    }
     print "Searching on ", goal, " with emap ", emap.evar_map, "\n";
     // find all rules that match current goal
     var matching_rules := find_matching_rules(rules, goal);
@@ -118,21 +130,23 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap) returns (b:bool
 
     // for all rules that match the current goal
     for i := 0 to |matching_rules|
-        invariant true
+        invariant emap.inv()
     {
         print "\t i = ", i, "\n"; 
         // var current_emap:EvarMap := emap; // TODO: Make a copy and not reference
         var current_emap:EvarMap := new EvarMap.Init(emap); // TODO: Check if this actually makes a copy
+        assert current_emap.inv();
         var rule:Rule := matching_rules[i];
         print "\t matching_rule = ", rule, "\n";
-        var option_subst,e := unify(rule.head, goal, emap);
+        var option_subst, e' := unify(rule.head, goal, emap);
         print "\t option_subst = ", option_subst, "\n";
-        current_emap := e;
+        current_emap := e';
         var subst : EvarSubstitution;
         match option_subst {
             case None => continue;
             case Some(subst') => subst := subst';
         }
+        assert current_emap.inv();
 
         var search_clauses:seq<SearchClause> := [];
         // TODO: What if rule.body is empty?
@@ -142,8 +156,9 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap) returns (b:bool
             // assert(rule.head is in Facts()); // do some proof stuff
             return true, current_emap;
         } else {
+            assert current_emap.inv();
             for j := 0 to |rule.body|
-                invariant true
+                invariant current_emap.inv()
             {
                 var clause:Clause := rule.body[j];
                 var search_clause, subst' := evarify(clause, subst, current_emap, rule);
@@ -155,7 +170,7 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap) returns (b:bool
             for j := 0 to |search_clauses|
                 invariant true
             {
-                var b',e := search(rules, search_clauses[j], current_emap);
+                var b',e := search(rules, search_clauses[j], current_emap, depth - 1);
                 if !b' {
                     flag := false;
                 }
@@ -205,7 +220,7 @@ method run_datalog(p:Program)
     var emap:EvarMap := new EvarMap();
     assert emap.inv();
     var query_sc:SearchClause := get_query_search_clause(query_rule.head, emap);
-    var b,_ := search(prog, query_sc, emap);
+    var b,_ := search(prog, query_sc, emap, 0x1_0000_0000);
     print "Query returned ", b, "\n";
 }
 

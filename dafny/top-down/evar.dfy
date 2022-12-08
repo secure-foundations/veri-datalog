@@ -24,9 +24,11 @@ class EvarMap {
 
     // TODO: Check if this implements a copy constructor
     constructor Init(emap:EvarMap)
+        requires emap.inv()
         ensures this.evar_map == emap.evar_map
         ensures this.next_evar == emap.next_evar
         ensures fresh(this)
+        ensures this.inv()
     {
         this.evar_map := emap.evar_map;
         this.next_evar := emap.next_evar;
