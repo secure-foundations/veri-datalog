@@ -32,11 +32,13 @@ search(goal: SearchClause) returns (ghost proof: Option<ProofTree>, b: bool)
 method find_matching_rules(rules: seq<Rule>, goal:SearchClause) returns (c:seq<Rule>)
     ensures forall r:Rule :: r in c ==> r.head.name == goal.name && |r.head.terms| == |goal.evar_terms|
     ensures forall r:Rule :: r in c ==> r.head == goal.clause
+    ensures forall r:Rule :: r in c ==> r in rules
 {
     var matching_rules : seq<Rule> := [];
     
     for i := 0 to |rules|
         invariant forall r:Rule :: r in matching_rules ==> r.head.name == goal.name && |r.head.terms| == |goal.evar_terms|
+        invariant forall r:Rule :: r in matching_rules ==> r in rules
     {
         var rule := rules[i];
         if (rule.head.name == goal.name && |rule.head.terms| == |goal.evar_terms|) {
@@ -271,12 +273,44 @@ search(search_clause(B, [evar1,evar3]))
     return false, None;
 }
 
+ghost method flatten_two_proofs(rules: seq<Rule>, subst: Substitution, goal1: Clause, proof1: Proof, goal2: Clause, proof2: Proof) returns (proof: Proof)
+    requires valid_proof(rules, goal1, proof1)
+    requires valid_proof(rules, goal2, proof2)
+    requires goal1.substitution_concrete(subst)
+    requires goal1.make_fact(subst) == Last(proof1).new_fact()
+    requires goal2.substitution_concrete(subst)
+    requires goal2.make_fact(subst) == Last(proof2).new_fact()
+    ensures  valid_proof(rules, goal1, proof)
+    ensures  goal1.make_fact(subst) == Last(proof).new_fact()
+    ensures  goal2.make_fact(subst) in Last(proof).facts
+{
+    var proof2_facts := Last(proof2).facts + [ Last(proof2).new_fact() ];
+    proof := proof2;
+    assert valid_proof(rules, goal2, proof);
+    assert forall j :: 0 <= j < |proof| ==> proof[j].rule in rules;
+    assert forall j :: 1 <= j < |proof| ==> proof[j].facts == proof[j-1].facts + [ proof[j-1].new_fact() ] ;
+    for i := 0 to |proof1|
+        invariant |proof| == |proof2| + i
+        invariant proof[..|proof2|] == proof2
+        invariant forall j :: 0 <= j < |proof| ==> proof[j].valid()
+        invariant forall j :: 0 <= j < |proof| ==> proof[j].rule in rules
+        invariant forall j :: 0 <= j < i ==> proof[|proof2| + j].facts == proof2_facts + proof1[j].facts
+        invariant forall j :: 0 <= j < i ==> proof1[j].new_fact() == proof[|proof2| + j].new_fact();
+        invariant forall j :: 1 <= j < |proof| ==> proof[j].facts == proof[j-1].facts + [ proof[j-1].new_fact() ] 
+        invariant forall j :: 0 <= j < i ==> proof[|proof2| + j].rule == proof1[j].rule
+    {
+        var proof_i_facts := proof2_facts + proof1[i].facts;
+        assert i > 0 ==> proof1[i].facts == proof1[i-1].facts + [ proof1[i-1].new_fact() ];        
+        proof := proof + [ProofStep(proof1[i].sub, proof1[i].rule, proof_i_facts)];
+    }
+}
+
 method combine_proofs(rules: seq<Rule>, rule: Rule, proofs: seq<Proof>) returns (proof: Proof)
     requires |rule.body| == |proofs|
     requires forall i :: 0 <= i < |rule.body| ==> valid_proof(rules, rule.body[i], proofs[i])
     ensures  valid_proof(rules, rule.head, proof)
 {
-
+    
 }
 
 method get_query_search_clause(query:Clause, emap:EvarMap) returns (sc:SearchClause)

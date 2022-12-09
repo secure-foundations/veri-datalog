@@ -93,8 +93,8 @@ predicate valid_proof(prog:Program, query:Clause, proof:Proof)
   && First(proof).facts == []
   // Each proof step is valid 
   && (forall i :: 0 <= i < |proof| ==> proof[i].valid())
-  // Each proof step except the last uses a rule from the program
-  && (forall i :: 0 <= i < |proof| - 1 ==> proof[i].rule in prog)
+  // Each proof step uses a rule from the program
+  && (forall i :: 0 <= i < |proof| ==> proof[i].rule in prog)
   // Each proof step extends the set of facts by one
   && (forall i :: 0 <= i < |proof| - 1 ==> proof[i+1].facts == proof[i].facts + [ proof[i].new_fact() ] )
   // Last proof step shows the query is valid
