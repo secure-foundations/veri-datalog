@@ -86,7 +86,7 @@ valid_proof(prog, A(X,Y), ...) // where seq<Fact> contains B(P,Q)
 
 type Proof = seq<ProofStep> 
 
-predicate valid_proof(prog:Program, query:Rule, proof:Proof)
+predicate valid_proof(prog:Program, query:Clause, proof:Proof)
 {
   && |proof| > 0
   // We start with an empty set of facts
@@ -98,10 +98,10 @@ predicate valid_proof(prog:Program, query:Rule, proof:Proof)
   // Each proof step extends the set of facts by one
   && (forall i :: 0 <= i < |proof| - 1 ==> proof[i+1].facts == proof[i].facts + [ proof[i].new_fact() ] )
   // Last proof step shows the query is valid
-  && Last(proof).rule == query
+  && Last(proof).rule.head == query
 }
 
-predicate valid_query(prog:Program, query:Rule)
+predicate valid_query(prog:Program, query:Clause)
 {
   exists proof :: valid_proof(prog, query, proof)
 }
