@@ -144,7 +144,7 @@ method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap)
     sc := SearchClause(clause.name, evar_terms, clause, subst');
 }
 
-method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) returns (b:bool, proof: Option<Proof>)//, e:EvarMap)
+method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) returns (b:bool, ghost proof: Option<Proof>)//, e:EvarMap)
     requires emap.inv()
     requires goal.valid_emap(emap)
     // ensures o.Some? ==> forall e :: e in o.value.Values ==> e in emap.evar_map
@@ -235,7 +235,7 @@ search(search_clause(B, [evar1,evar3]))
 */
 
             var flag := true;
-            var proofs : seq<Proof> := [];
+            ghost var proofs : seq<Proof> := [];
             for j := 0 to |search_clauses|
                 invariant emap.inv()
                 invariant current_emap.inv()
@@ -305,12 +305,12 @@ ghost method flatten_two_proofs(rules: seq<Rule>, subst: Substitution, goal1: Cl
     }
 }
 
-method combine_proofs(rules: seq<Rule>, rule: Rule, proofs: seq<Proof>) returns (proof: Proof)
+ghost method combine_proofs(rules: seq<Rule>, rule: Rule, proofs: seq<Proof>) returns (proof: Proof)
     requires |rule.body| == |proofs|
     requires forall i :: 0 <= i < |rule.body| ==> valid_proof(rules, rule.body[i], proofs[i])
     ensures  valid_proof(rules, rule.head, proof)
 {
-    
+
 }
 
 method get_query_search_clause(query:Clause, emap:EvarMap) returns (sc:SearchClause)
