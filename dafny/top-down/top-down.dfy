@@ -279,6 +279,8 @@ ghost method flatten_two_proofs(rules: seq<Rule>, subst: Substitution, goal1: Cl
     ensures  valid_proof(rules, goal1, proof)
     ensures  goal1.make_fact(subst) == Last(proof).new_fact()
     ensures  goal2.make_fact(subst) in Last(proof).facts
+    ensures  forall f :: f in Last(proof1).facts ==> f in Last(proof).facts
+    ensures  forall f :: f in Last(proof2).facts ==> f in Last(proof).facts
 {
     var proof2_facts := Last(proof2).facts + [ Last(proof2).new_fact() ];
     proof := proof2;
@@ -303,11 +305,28 @@ ghost method flatten_two_proofs(rules: seq<Rule>, subst: Substitution, goal1: Cl
 
 ghost method combine_proofs(rules: seq<Rule>, rule: Rule, subst: Substitution, proofs: seq<Proof>) returns (proof: Proof)
     requires |rule.body| == |proofs| >= 1
+    requires rule in rules
     requires forall i :: 0 <= i < |rule.body| ==> valid_proof(rules, rule.body[i], proofs[i])
+    requires rule.head.substitution_concrete(subst)
     requires forall i :: 0 <= i < |rule.body| ==> rule.body[i].substitution_concrete(subst) && rule.body[i].make_fact(subst) == Last(proofs[i]).new_fact();
     ensures  valid_proof(rules, rule.head, proof)
 {
-    
+    proof := proofs[0];
+    var goal := rule.body[0];
+    for i := 1 to |proofs|
+        invariant valid_proof(rules, goal, proof)
+        invariant goal.substitution_concrete(subst)
+        invariant goal.make_fact(subst) == Last(proof).new_fact()
+        invariant goal == rule.body[i-1]
+        invariant forall j :: 0 <= j < |proof| ==> proof[j].valid()
+        invariant forall j :: 0 <= j < i - 1 ==> rule.body[j].make_fact(subst) in Last(proof).facts
+    {
+        var new_proof := flatten_two_proofs(rules, subst, rule.body[i], proofs[i], goal, proof);
+        proof := new_proof;
+        goal := rule.body[i];
+    }
+    var last_step := ProofStep(subst, rule, Last(proof).facts + [ Last(proof).new_fact() ]);
+    proof := proof + [last_step];
 }
 
 method get_query_search_clause(query:Clause, emap:EvarMap) returns (sc:SearchClause)
@@ -354,22 +373,3 @@ method run_datalog(p:Program)
         print "Invalid or unsupported datalog program";
     }
 }
-
-
-// method run(raw_prog:Program)
-//   requires |raw_prog| > 0
-// {
-//   var prog := DropLast(raw_prog);
-//   var q := Last(raw_prog);
-//   //print "Program is: ", prog, "\n";
-//   //print "Query is: ", q, "\n";
-//   //var valid_prog := check_program(prog);
-//   var valid_query := check_rule(q);
-//   //if valid_prog && valid_query {
-//   if valid_query {
-//     var b := query(prog, q);  
-//     print "Query returned ", b, "\n";
-//   } else {
-//     print "Sorry, that's an invalid program and/or query\n";
-//   }
-// }
