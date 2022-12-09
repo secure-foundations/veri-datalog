@@ -12,26 +12,33 @@ import opened Wrappers
 
 
 // TODO: Create another datastructure that ties 'subst' to 'rule'
-datatype TopDownProofStep = ProofStep(subst:EvarSubstitution, rule:Rule, success_emap:EvarMap) {
-    predicate valid() 
-        reads success_emap
-    {
-        && forall e :: e in subst.Values ==> e in success_emap.evar_map
-        && success_emap.fully_resolved()
-        // exists e:Evar :: e in success_emap.evar_map && true
-        // && subst.getreverse(e).Some?
-        // && rule.head.substitution_complete(get_substitution_from_subst(subst, success_emap))
-    }
+// datatype TopDownProofStep = ProofStep(subst:EvarSubstitution, rule:Rule, success_emap:EvarMap) {
+//     predicate valid() 
+//         reads success_emap
+//     {
+//         && forall e :: e in subst.Values ==> e in success_emap.evar_map
+//         && success_emap.fully_resolved()
+//         // exists e:Evar :: e in success_emap.evar_map && true
+//         // && subst.getreverse(e).Some?
+//         // && rule.head.substitution_complete(get_substitution_from_subst(subst, success_emap))
+//     }
 
-    function subst_of() : Substitution
-        reads success_emap
-        requires valid()
-    {
-        map v:VarTerm | v in subst.Keys :: Const(success_emap.evar_map[subst[v]].value)
-    }
-}
+//     function subst_of() : Substitution
+//         reads success_emap
+//         requires valid()
+//     {
+//         map v:VarTerm | v in subst.Keys :: Const(success_emap.evar_map[subst[v]].value)
+//     }
+// }
 
-type TopDownProof = seq<TopDownProofStep>
+// type TopDownProof = seq<TopDownProofStep>
+
+
+
+
+
+
+
 
 
 /*

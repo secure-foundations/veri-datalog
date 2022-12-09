@@ -6,6 +6,7 @@ import opened Wrappers
 // datatype Evar = Evar(e:int)
 type Evar = nat
 
+type EvarSubstitution = map<VarTerm, Evar>
 class EvarMap {
     var evar_map: map<Evar, Option<string>>; // this string should be changed to whatever the const type is
     var next_evar: Evar;
@@ -119,4 +120,12 @@ class EvarMap {
     }
 }
 
-type EvarSubstitution = map<VarTerm, Evar>
+
+method make_subst(emap: EvarMap, esubst: EvarSubstitution) returns (subst: Substitution) 
+    requires emap.inv()
+    requires forall e :: e in esubst.Values ==> e in emap.evar_map
+    ensures  forall t :: t in subst.Values  ==> t.Const?
+    ensures  forall v :: v in esubst ==> v in subst
+{
+    assume false; //TODO bijective map stuff
+}
