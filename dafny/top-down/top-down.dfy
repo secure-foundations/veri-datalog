@@ -221,19 +221,6 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
                 subst := subst';
                 search_clauses := search_clauses + [search_clause];
             }
-            //subst
-/*
-
-A(X,Y) :- B(X,Z),C(Y,Z).
-
-before: subst=[X->evar1, Y->evar2]
-evar1 in emap, evar2 in emap
-
-evarify(B(X,Z)) ---> search_clause(B, [evar1,evar3])
-search(search_clause(B, [evar1,evar3]))
-
-*/
-
             var flag := true;
             ghost var proofs : seq<Proof> := [];
             for j := 0 to |search_clauses|
@@ -247,6 +234,7 @@ search(search_clause(B, [evar1,evar3]))
                 // invariant goal.valid_emap(emap)
                 invariant flag ==> (|proofs| == j)
                 invariant flag ==> (forall i :: 0 <= i < j ==> valid_proof(rules, search_clauses[i].clause, proofs[i]))
+                invariant forall e :: e in subst.Values ==> e in emap.evar_map
             {
                 var b',proof_j := search(rules, search_clauses[j], emap, depth - 1);
                 if !b' {
@@ -264,7 +252,8 @@ search(search_clause(B, [evar1,evar3]))
                 assert forall i :: 0 <= i < |rule.body| ==> rule.body[i] == search_clauses[i].clause;
                 assert forall i :: 0 <= i < |rule.body| ==> valid_proof(rules, search_clauses[i].clause, proofs[i]);
                 assert forall i :: 0 <= i < |rule.body| ==> valid_proof(rules, rule.body[i], proofs[i]);
-                var proof := combine_proofs(rules, rule, proofs);
+                var concreteSubst := make_subst(emap, subst);
+                var proof := combine_proofs(rules, rule, concreteSubst, proofs);
                 return true, Some(proof);
             }
         }
@@ -305,7 +294,7 @@ ghost method flatten_two_proofs(rules: seq<Rule>, subst: Substitution, goal1: Cl
     }
 }
 
-ghost method combine_proofs(rules: seq<Rule>, rule: Rule, proofs: seq<Proof>) returns (proof: Proof)
+ghost method combine_proofs(rules: seq<Rule>, rule: Rule, subst: Substitution, proofs: seq<Proof>) returns (proof: Proof)
     requires |rule.body| == |proofs|
     requires forall i :: 0 <= i < |rule.body| ==> valid_proof(rules, rule.body[i], proofs[i])
     ensures  valid_proof(rules, rule.head, proof)
