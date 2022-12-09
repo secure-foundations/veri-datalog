@@ -67,6 +67,23 @@ datatype ProofStep = ProofStep(sub:Substitution, rule:Rule, facts:seq<Fact>)
   }
 }
 
+/*
+assert(exists i :: s[i] == a)
+var i | 0 <= i < |s| && s[i] == a;
+...
+assert((s'+s)[|s'|+i] == a);
+assert(a in (s'+s));
+*/
+
+
+/*
+valid_proof(prog, A(X,Y), ...)
+valid_proof(prog, B(P,Q), ...)
+==>
+valid_proof(prog, A(X,Y), ...) // where seq<Fact> contains B(P,Q)
+
+*/
+
 type Proof = seq<ProofStep> 
 
 predicate valid_proof(prog:Program, query:Rule, proof:Proof)

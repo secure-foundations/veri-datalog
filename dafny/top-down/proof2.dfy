@@ -48,10 +48,13 @@ The recursive calls to search() should return proofs:
     D(x,z) with factset3
 
 The proof of A(x, y) looks like:
-    ProofStep(subst = [X->x, Y->y, Z->z], rule = A(X,Y) :- ..., facts = factset1 \union factset2 \union factset3) 
+    ProofStep(subst = [X->x, Y->y, Z->z], rule = A(X,Y) :- ..., facts = factset1 ++ factset2 ++ factset3) 
     ++ [proof of B(x,y) with factset1 \union factset2 \union factset3] 
     ++ [proof of C(y,z) with factset2 \union factset3] 
     ++ [proof of D(x,z) with factset3]
+
+applyRule : seq<Proof> -> Rule -> Proof
+proofs of RHS -> rule -> proof of LHS
 
 ==> Need to write a unionFactSet operation that flattens multiple proofs into one.
 

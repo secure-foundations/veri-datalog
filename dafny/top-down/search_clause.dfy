@@ -7,6 +7,7 @@ import opened Wrappers
 import opened Seq
 import opened BijectiveMap
 
+// TODO write some documentation here :)
 datatype SearchClause = SearchClause(name:string, evar_terms:seq<Evar>, clause: Clause, subst: EvarSubstitution)
 {
     predicate valid_emap(emap: EvarMap) 
@@ -16,6 +17,16 @@ datatype SearchClause = SearchClause(name:string, evar_terms:seq<Evar>, clause: 
         && forall e:Evar :: e in subst.Values ==> e in emap.evar_map
         // multiset(evar_terms) <= multiset(emap.evar_map.Keys)
     }
+
+/*
+
+    predicate valid_proof_for(proof: Proof, emap: EvarMap)
+        requires valid_emap(emap)
+    {
+        valid_proof(proof, (subst \compose emap)(clause))
+    }
+
+*/
 
     predicate valid()
     {

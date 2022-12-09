@@ -116,6 +116,9 @@ method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap)
         match term {
             case Var(s) => {
                 if term in subst'.Keys {
+                    // A(X,Y) :- B(X,Z), C(Y,Z).
+                    // X->evar(?), Y->evar(?)  add new evar for Z
+
                     var ev := subst'[term]; // this should imply ev in emap.evar_map
                     evar_terms := evar_terms + [ev];
                 } else if term !in subst' {
@@ -211,18 +214,32 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
                 subst := subst';
                 search_clauses := search_clauses + [search_clause];
             }
+            //subst
+/*
+
+A(X,Y) :- B(X,Z),C(Y,Z).
+
+before: subst=[X->evar1, Y->evar2]
+evar1 in emap, evar2 in emap
+
+evarify(B(X,Z)) ---> search_clause(B, [evar1,evar3])
+search(search_clause(B, [evar1,evar3]))
+
+*/
 
             var flag := true;
+            var proofs : seq<Proof>;
             for j := 0 to |search_clauses|
                 invariant emap.inv()
                 invariant current_emap.inv()
                 // invariant current_emap == old(current_emap)
                 invariant forall sc :: sc in search_clauses ==> sc.valid_emap(emap)
+                // invariant forall e :: e in subst.Values ==> e in emap.evar_map
                 invariant emap.monotonically_increasing() // invariant forall e :: e in old(emap.evar_map) ==> e in emap.evar_map
                 invariant forall e :: e in old(emap.evar_map) ==> e in current_emap.evar_map // TODO: Make this a predicate inside evar.dfy
                 // invariant goal.valid_emap(emap)
             {
-                var b' := search(rules, search_clauses[j], emap, depth - 1);
+                var b',proof_of_search_clause_j := search(rules, search_clauses[j], emap, depth - 1);
                 if !b' {
                     flag := false;
                 }
@@ -231,6 +248,7 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
             // return true only if all search branches return true
             // return true if at least one rule works successfully
             if flag {
+                // assert(emap.is_fully_resolved());
                 return true;
             }
         }
