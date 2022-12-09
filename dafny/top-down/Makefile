@@ -21,3 +21,6 @@ test: all
 
 test-no-verify: no-verify
 	for f in $(TEST); do echo $$f; dotnet run --project datalog/datalog.csproj $$f; done
+
+clean: 
+	rm top-down.cs

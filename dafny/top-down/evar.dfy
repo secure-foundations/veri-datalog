@@ -121,11 +121,16 @@ class EvarMap {
 }
 
 
-method make_subst(emap: EvarMap, esubst: EvarSubstitution) returns (subst: Substitution) 
+function method make_subst(emap: EvarMap, esubst: EvarSubstitution) : Substitution
+    reads emap
     requires emap.inv()
     requires forall e :: e in esubst.Values ==> e in emap.evar_map
-    ensures  forall t :: t in subst.Values  ==> t.Const?
-    ensures  forall v :: v in esubst ==> v in subst
+    ensures  emap.fully_resolved() ==> forall t :: t in make_subst(emap, esubst).Values  ==> t.Const?
+    ensures  forall v :: v in esubst ==> v in make_subst(emap, esubst)
 {
-    assume false; //TODO bijective map stuff
+    map v:Term | v in esubst :: (
+        match emap.evar_map[esubst[v]]
+            case Some(c) => Const(c)
+            case None    => v
+    )
 }

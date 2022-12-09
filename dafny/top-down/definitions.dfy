@@ -105,3 +105,93 @@ predicate valid_query(prog:Program, query:Clause)
 {
   exists proof :: valid_proof(prog, query, proof)
 }
+
+
+predicate match_exists(t:Term, clauses:seq<Clause>) 
+{
+  exists i, j :: 0 <= i < |clauses| && 0 <= j < |clauses[i].terms| && clauses[i].terms[j] == t
+}
+
+predicate rule_is_range_restricted(r:Rule)
+{
+  if |r.body| == 0 then true
+  else
+    forall t:Term :: t in r.head.terms ==> 
+      (t.Var? ==> match_exists(t, r.body))
+}
+
+predicate valid_rule(r:Rule) {
+  && (|r.body| == 0 ==> r.head.is_ground())
+  && rule_is_range_restricted(r)
+}
+
+predicate valid_program(p:Program) {
+  forall i :: 0 <= i < |p| ==> valid_rule(p[i])
+}
+
+method clause_is_ground(c:Clause) returns (b:bool)
+  ensures b == c.is_ground()
+{
+  for i := 0 to |c.terms| 
+    invariant forall j :: 0 <= j < i ==> c.terms[j].Const?
+  {
+    if !c.terms[i].Const? {
+      return false;
+    }
+  }
+  return true;
+}
+
+method find_var(term:Term, clauses:seq<Clause>) returns (b:bool)
+  ensures b == match_exists(term, clauses)
+{
+  for i := 0 to |clauses| 
+    invariant forall m :: 0 <= m < i ==>
+                (forall k :: 0 <= k < |clauses[m].terms| ==> clauses[m].terms[k] != term) 
+  {
+    var clause := clauses[i];
+    for j := 0 to |clause.terms| 
+      invariant forall k :: 0 <= k < j ==> clause.terms[k] != term
+    {
+      if clause.terms[j] == term {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+method check_rule(r:Rule) returns (b:bool)
+  ensures b == valid_rule(r)
+{
+  if |r.body| == 0 {
+    b := clause_is_ground(r.head);
+  } else {
+      for i := 0 to |r.head.terms| 
+        invariant forall j :: 0 <= j < i ==> (r.head.terms[j].Var? ==> match_exists(r.head.terms[j], r.body))
+      {
+        var term := r.head.terms[i];
+        if term.Var? {
+          var b := find_var(term, r.body);
+          if !b {
+            return false;
+          }
+        }
+      }
+      return true;
+  }
+}
+
+method check_program(prog:Program) returns (b:bool)
+  ensures b == valid_program(prog)
+{
+  b := true;
+  for i := 0 to |prog| 
+    invariant forall j :: 0 <= j < i ==> valid_rule(prog[j])
+  {
+    var valid_rule := check_rule(prog[i]);
+    if !valid_rule {
+      return false;
+    }
+  }
+}
