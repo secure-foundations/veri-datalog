@@ -10,12 +10,25 @@ import opened BijectiveMap
 // TODO write some documentation here :)
 datatype SearchClause = SearchClause(name:string, evar_terms:seq<Evar>, clause: Clause, subst: EvarSubstitution)
 {
+    predicate valid() 
+    {
+        && (name == clause.name)
+        && (subst.Values <= ToSet(evar_terms))
+    }
+
     predicate valid_emap(emap: EvarMap) 
         reads emap
     {
-        && forall e:Evar :: e in evar_terms ==> e in emap.evar_map
-        && forall e:Evar :: e in subst.Values ==> e in emap.evar_map
+        && (forall e:Evar :: e in evar_terms ==> e in emap.evar_map)
+        && (forall e:Evar :: e in subst.Values ==> e in emap.evar_map)
         // multiset(evar_terms) <= multiset(emap.evar_map.Keys)
+    }
+
+    predicate emap_fully_resolved(emap: EvarMap)
+        reads emap
+        requires valid_emap(emap)
+    {
+        forall e:Evar :: e in evar_terms ==> emap.evar_map[e].Some?
     }
 
 /*
@@ -27,11 +40,6 @@ datatype SearchClause = SearchClause(name:string, evar_terms:seq<Evar>, clause: 
     }
 
 */
-
-    predicate valid()
-    {
-        name == clause.name
-    }
 
     // predicate valid()
     // {
