@@ -96,6 +96,7 @@ class EvarMap {
         ensures this.evar_map == emap.evar_map
         ensures this.next_evar == emap.next_evar
         ensures this.inv()
+        ensures unchanged(emap)
     {
         this.evar_map := emap.evar_map;
         this.next_evar := emap.next_evar;
@@ -105,17 +106,27 @@ class EvarMap {
         reads this
     {
         // no new keys added
-        this.evar_map.Keys == old(this.evar_map).Keys
+        old(this.evar_map).Keys == this.evar_map.Keys 
 
         // all values that are Some, remain Some with the same const
-        && forall e:Evar | e in this.evar_map :: (old(this.evar_map)[e].Some? ==> this.evar_map[e] == this.evar_map[e])
+        && forall e:Evar | e in old(this.evar_map) :: (old(this.evar_map)[e].Some? ==> old(this.evar_map)[e] == this.evar_map[e])
     }
 
     twostate predicate monotonically_increasing()
         reads this
     {
-        forall e :: e in old(this.evar_map) ==> e in this.evar_map // TODO: Is a subset check better for the verifier?
+        // no new keys added
+        old(this.evar_map).Keys <= this.evar_map.Keys
+
+        // all values that are Some, remain Some with the same const
+        && forall e:Evar | e in old(this.evar_map) :: (old(this.evar_map)[e].Some? ==> old(this.evar_map)[e] == this.evar_map[e])
     }
+
+    // twostate predicate monotonically_increasing()
+    //     reads this
+    // {
+    //     forall e :: e in old(this.evar_map) ==> e in this.evar_map // TODO: Is a subset check better for the verifier?
+    // }
 
     predicate fully_resolved() 
         reads this
@@ -132,6 +143,8 @@ function method make_subst(emap: EvarMap, esubst: EvarSubstitution) : Substituti
     requires forall e:Evar :: esubst.in2(e) ==> e in emap.evar_map
     ensures  emap.fully_resolved() ==> forall t :: t in make_subst(emap, esubst).Values  ==> t.Const?
     ensures  forall v:VarTerm :: esubst.in1(v) ==> v in make_subst(emap, esubst)
+    ensures forall v:VarTerm :: (esubst.in1(v) && !v.Var? && esubst.get1(v) in emap.evar_map) 
+                        ==> (make_subst(emap, esubst)[v].Const?)
 {
     // reveal esubst.in1();
     // map v:Term | esubst.in1(v) :: (

@@ -1,8 +1,9 @@
 include "std-lib/src/Wrappers.dfy"
-
+include "std-lib/src/Collections/Maps/Maps.dfy"
 
 module BijectiveMap {
     import opened Wrappers
+    import opened Maps
 
     datatype BijectiveMap<T1, T2> = BijectiveMap(l_to_r:map<T1, T2>, r_to_l:map<T2, T1>) {
         predicate valid() {
@@ -85,6 +86,14 @@ module BijectiveMap {
             l_to_r.Items
         }
 
+        predicate {:opaque} IsSubsetOf(b:BijectiveMap<T1,T2>)
+            requires valid()
+            requires b.valid()
+        {
+            // Items() <= b.Items()
+            IsSubset(l_to_r, b.l_to_r) && IsSubset(r_to_l, b.r_to_l)
+        }
+
         // lemma lemma_domain_sizes(b:BijectiveMap<T1, T2>)
         //     requires b.valid()
         //     ensures b.valid()
@@ -140,4 +149,29 @@ module BijectiveMap {
     {
         return BijectiveMap(map[], map[]);
     }
+
+    // lemma InsertItems<T1,T2>(b:BijectiveMap<T1,T2>, e1:T1, e2:T2)
+    //     requires b.valid()
+    //     requires !b.in1(e1) && !b.in2(e2) 
+    //     ensures  (b.insert(e1, e2).Items() == b.Items() + {(e1, e2)});
+    // {
+    //     assert(b.Values() == b.l_to_r.Values);
+    //     assert(b.insert(e1, e2).Keys() == b.Keys() + {e1});
+    //     assert(b.insert(e1, e2).Values() == b.Values() + {e2});
+    //     // assert(b.insert(e1, e2).Items() == b.Items() + {(e1, e2)});
+        
+    // }
+
+    lemma InsertPreservesSubset<T1, T2>(b1:BijectiveMap<T1,T2>, b2:BijectiveMap<T1,T2>, e1:T1, e2:T2)
+        requires b1.valid()
+        requires b2.valid()
+        requires reveal b1.IsSubsetOf(); b1.IsSubsetOf(b2)
+        requires !b1.in1(e1) && !b1.in2(e2) && !b2.in1(e1) && !b2.in2(e2)
+        ensures (b1.insert(e1,e2)).IsSubsetOf(b2.insert(e1,e2))
+    {
+        reveal b1.IsSubsetOf();
+    }
+
 }
+
+
