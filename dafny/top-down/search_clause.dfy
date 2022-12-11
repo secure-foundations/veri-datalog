@@ -10,22 +10,34 @@ import opened BijectiveMap
 // TODO write some documentation here :)
 datatype SearchClause = SearchClause(name:string, evar_terms:seq<Evar>, clause: Clause, subst: EvarSubstitution)
 {
-    predicate valid() 
+    predicate valid()
     {
+        && valid_clause(clause) // Restriction
+        // && distinct(evar_terms) // Restriction
         && (name == clause.name)
-        && (subst.Values <= ToSet(evar_terms))
+        && subst.valid()
+        && (subst.Values() == ToSet(evar_terms))
+        // && (subst.Values == ToSet(evar_terms))
+        && |evar_terms| == |clause.terms|
+        && forall i:nat | i < |clause.terms| :: (subst.in1(clause.terms[i])
+                                                 && subst.get1(clause.terms[i]) == evar_terms[i])
+        // && forall i:nat | i < |clause.terms| :: (clause.terms[i] in subst
+        //                                          && subst[clause.terms[i]] == evar_terms[i])
     }
 
     predicate valid_emap(emap: EvarMap) 
         reads emap
+        requires valid() // TODO: This is required
     {
         && (forall e:Evar :: e in evar_terms ==> e in emap.evar_map)
-        && (forall e:Evar :: e in subst.Values ==> e in emap.evar_map)
+        && (forall e:Evar :: subst.in2(e) ==> e in emap.evar_map)
+        // && (forall e:Evar :: e in subst.Values ==> e in emap.evar_map)
         // multiset(evar_terms) <= multiset(emap.evar_map.Keys)
     }
 
     predicate emap_fully_resolved(emap: EvarMap)
         reads emap
+        requires valid()
         requires valid_emap(emap)
     {
         forall e:Evar :: e in evar_terms ==> emap.evar_map[e].Some?
