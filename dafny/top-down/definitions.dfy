@@ -120,9 +120,17 @@ predicate rule_is_range_restricted(r:Rule)
       (t.Var? ==> match_exists(t, r.body))
 }
 
+// Check that a clause does not have duplicate terms
+predicate valid_clause(c:Clause) {
+  forall i:nat, j:nat | i < |c.terms| && j < |c.terms| :: i != j ==> c.terms[i] != c.terms[j]
+}
+
 predicate valid_rule(r:Rule) {
   && (|r.body| == 0 ==> r.head.is_ground())
   && rule_is_range_restricted(r)
+  // TODO: The below two conditions are temporary relaxations
+  && valid_clause(r.head)
+  && forall b :: b in r.body ==> valid_clause(b)
 }
 
 predicate valid_program(p:Program) {
@@ -161,25 +169,59 @@ method find_var(term:Term, clauses:seq<Clause>) returns (b:bool)
   return false;
 }
 
+method check_clause(c:Clause) returns (b:bool)
+  ensures b == valid_clause(c)
+{
+  var terms_seen:set<Term> := {};
+  reveal ToSet();
+  for k := 0 to |c.terms|
+    invariant terms_seen == ToSet(c.terms[..k])
+    invariant forall i:nat, j:nat | i < k && j < k :: i != j ==> c.terms[i] != c.terms[j]
+  {
+    if c.terms[k] in terms_seen {
+      return false;
+    } else {
+      terms_seen := terms_seen + {c.terms[k]};
+    }
+  }
+  return true;
+}
+
 method check_rule(r:Rule) returns (b:bool)
   ensures b == valid_rule(r)
 {
   if |r.body| == 0 {
-    b := clause_is_ground(r.head);
+    var bb := clause_is_ground(r.head);
+    if !bb {
+      return false;
+    }
   } else {
       for i := 0 to |r.head.terms| 
         invariant forall j :: 0 <= j < i ==> (r.head.terms[j].Var? ==> match_exists(r.head.terms[j], r.body))
       {
         var term := r.head.terms[i];
         if term.Var? {
-          var b := find_var(term, r.body);
-          if !b {
+          var bbb := find_var(term, r.body);
+          if !bbb {
             return false;
           }
         }
       }
-      return true;
   }
+  // TODO: The below is a restriction on the types of clauses allowed in the Datalog program
+  var b' := check_clause(r.head);
+  if !b' {
+    return false;
+  }
+  for i := 0 to |r.body| 
+    invariant forall j | 0 <= j < i :: valid_clause(r.body[j])
+  {
+    var b'' := check_clause(r.body[i]);
+    if !b'' {
+      return false;
+    }
+  }
+  return true;
 }
 
 method check_program(prog:Program) returns (b:bool)
