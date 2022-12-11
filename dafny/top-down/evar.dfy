@@ -1,12 +1,15 @@
 include "std-lib/src/Wrappers.dfy"
 include "definitions.dfy"
+include "bijective_map.dfy"
 
 import opened Wrappers
+import opened BijectiveMap
 
 // datatype Evar = Evar(e:int)
 type Evar = nat
 
-type EvarSubstitution = map<VarTerm, Evar>
+// type EvarSubstitution = map<Term, Evar>
+type EvarSubstitution = BijectiveMap<Term, Evar>
 class EvarMap {
     var evar_map: map<Evar, Option<string>>; // this string should be changed to whatever the const type is
     var next_evar: Evar;
@@ -75,13 +78,14 @@ class EvarMap {
         evar_map := evar_map[e := Some(v)];
     }
 
-    method lookup(e:Evar) returns (o:Option<string>)
+    function method lookup(e:Evar) : Option<string>
+        reads this
         requires inv()
         requires e in evar_map
         ensures inv()
-        ensures o == evar_map[e]
+        ensures lookup(e) == evar_map[e]
     {
-        return evar_map[e];
+        evar_map[e]
     }
 
     method copy(emap:EvarMap) returns ()
@@ -124,13 +128,33 @@ class EvarMap {
 function method make_subst(emap: EvarMap, esubst: EvarSubstitution) : Substitution
     reads emap
     requires emap.inv()
-    requires forall e :: e in esubst.Values ==> e in emap.evar_map
+    requires esubst.valid()
+    requires forall e:Evar :: esubst.in2(e) ==> e in emap.evar_map
     ensures  emap.fully_resolved() ==> forall t :: t in make_subst(emap, esubst).Values  ==> t.Const?
-    ensures  forall v :: v in esubst ==> v in make_subst(emap, esubst)
+    ensures  forall v:VarTerm :: esubst.in1(v) ==> v in make_subst(emap, esubst)
 {
-    map v:Term | v in esubst :: (
-        match emap.evar_map[esubst[v]]
+    // reveal esubst.in1();
+    // map v:Term | esubst.in1(v) :: (
+    map v:Term | v in esubst.l_to_r :: ( // TODO: use in1()
+        match emap.evar_map[esubst.get1(v)]
             case Some(c) => Const(c)
             case None    => v
     )
 }
+
+
+// function method make_subst(emap: EvarMap, esubst: EvarSubstitution) : Substitution
+//     reads emap
+//     requires emap.inv()
+//     requires forall e:Evar :: e in esubst.Values ==> e in emap.evar_map
+//     ensures  emap.fully_resolved() ==> forall t :: t in make_subst(emap, esubst).Values  ==> t.Const?
+//     ensures  forall v:VarTerm :: v in esubst ==> v in make_subst(emap, esubst)
+// {
+//     // reveal esubst.in1();
+//     // map v:Term | esubst.in1(v) :: (
+//     map v:Term | v in esubst :: ( // TODO: use in1()
+//         match emap.evar_map[esubst[v]]
+//             case Some(c) => Const(c)
+//             case None    => v
+//     )
+// }
