@@ -93,8 +93,8 @@ search_clause(query).subst applied to query
 
 type Proof = seq<ProofStep> 
 
-predicate valid_proof(prog:Program, query:Clause, proof:Proof)
-// predicate valid_proof(prog:Program, query:Fact, proof:Proof)
+// predicate valid_proof(prog:Program, query:Clause, proof:Proof)
+predicate valid_proof(prog:Program, query:Fact, proof:Proof)
 {
   && |proof| > 0
   // We start with an empty set of facts
@@ -106,14 +106,14 @@ predicate valid_proof(prog:Program, query:Clause, proof:Proof)
   // Each proof step extends the set of facts by one
   && (forall i :: 0 <= i < |proof| - 1 ==> proof[i+1].facts == proof[i].facts + [ proof[i].new_fact() ] )
   // Last proof step shows the query is valid
-  // && Last(proof).new_fact() == query
-  && Last(proof).rule.head == query
+  && Last(proof).new_fact() == query
+  //&& Last(proof).rule.head == query
 }
 
 predicate valid_query(prog:Program, query:Clause)
 {
-  exists proof :: valid_proof(prog, query, proof)
-  // exists proof, subst :: query.substitution_concrete(subst) && valid_proof(prog, query.make_fact(subst), proof)
+  //exists proof :: valid_proof(prog, query, proof)
+  exists proof, subst :: query.substitution_concrete(subst) && valid_proof(prog, query.make_fact(subst), proof)
 }
 
 

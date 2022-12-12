@@ -35,7 +35,7 @@ class EvarMap {
         ensures this != emap
         ensures this.inv()
     {
-        this.evar_map := emap.evar_map;
+        this.evar_map := map e : Evar | e in emap.evar_map :: emap.evar_map[e];
         this.next_evar := emap.next_evar;
         new;
     }
@@ -142,9 +142,11 @@ function method make_subst(emap: EvarMap, esubst: EvarSubstitution) : Substituti
     requires esubst.valid()
     requires forall e:Evar :: esubst.in2(e) ==> e in emap.evar_map
     ensures  emap.fully_resolved() ==> forall t :: t in make_subst(emap, esubst).Values  ==> t.Const?
-    ensures  forall v:VarTerm :: esubst.in1(v) ==> v in make_subst(emap, esubst)
-    ensures forall v:VarTerm :: (esubst.in1(v) && !v.Var? && esubst.get1(v) in emap.evar_map) 
-                        ==> (make_subst(emap, esubst)[v].Const?)
+    ensures  forall v:Term :: esubst.in1(v) ==> v in make_subst(emap, esubst)
+    // ensures forall v:VarTerm :: (esubst.in1(v) && esubst.get1(v) in emap.evar_map) 
+    //                     ==> (make_subst(emap, esubst)[v].Const?)
+    ensures  forall v:VarTerm :: v in esubst.l_to_r ==> (emap.evar_map[esubst.get1(v)].Some? ==> (make_subst(emap, esubst)[v] == Const(emap.evar_map[esubst.get1(v)].value)))
+    // ensures  forall v:VarTerm :: esubst.in1(v) ==> (emap.evar_map[esubst.get1(v)].Some? ==> (make_subst(emap, esubst)[v] == Const(emap.evar_map[esubst.get1(v)].value)))
 {
     // reveal esubst.in1();
     // map v:Term | esubst.in1(v) :: (
