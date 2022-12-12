@@ -14,7 +14,7 @@ top-down.cs: top-down.dfy
 top-down-no-verify: top-down.dfy
 	dafny /noVerify /compile:0 /spillTargetCode:3 top-down.dfy 
 
-TEST = $(wildcard examples/*.dl) $(wildcard ../bottom-up/examples/*.dl)
+TEST = $(wildcard examples/*.dl) # $(wildcard ../bottom-up/examples/*.dl)
 
 test: all
 	for f in $(TEST); do echo $$f; dotnet run --project datalog/datalog.csproj $$f; done

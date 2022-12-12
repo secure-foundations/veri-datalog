@@ -5,7 +5,7 @@ include "std-lib/src/Collections/Sequences/Seq.dfy"
 include "bijective_map.dfy"
 import opened Wrappers
 import opened Seq
-import opened BijectiveMap
+import opened BijectiveMapModule
 
 // TODO write some documentation here :)
 datatype SearchClause = SearchClause(name:string, evar_terms:seq<Evar>, clause: Clause, subst: EvarSubstitution)

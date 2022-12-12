@@ -1,7 +1,7 @@
 include "std-lib/src/Wrappers.dfy"
 include "std-lib/src/Collections/Maps/Maps.dfy"
 
-module BijectiveMap {
+module BijectiveMapModule {
     import opened Wrappers
     import opened Maps
 

@@ -1,0 +1,9 @@
+node("x").
+node("y").
+node("z").
+edge("x", "y").
+edge("y", "z").
+connected(A, B) :- edge(A, B).
+connected(A, B) :- connected(A, M), edge(M, B).
+
+query(W) :- connected("y", W).

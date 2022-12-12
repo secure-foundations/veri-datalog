@@ -3,7 +3,7 @@ include "definitions.dfy"
 include "bijective_map.dfy"
 
 import opened Wrappers
-import opened BijectiveMap
+import opened BijectiveMapModule
 
 // datatype Evar = Evar(e:int)
 type Evar = nat
