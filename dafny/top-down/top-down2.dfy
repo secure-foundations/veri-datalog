@@ -60,6 +60,15 @@ unify(RuleHead, Goal) : P-->ev1
 we want: X-->P, Y-->P (because we map the P in subst to whatever evar X points to)
 
 therefore if forall P,Q, they are resolved to consts, then X,Y also have to
+
+goal: A(evar1, evar2)
+head_clause: A(X, "foo")
+
+side effect: resolve evar2 to "foo"
+--> Var(X)-->evar1, Const("foo")-->evar2
+
+subst(head_clause.terms) == goal.subst(goal.clause.terms) == goal.evar_terms
+
 */
 
 method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Option<EvarSubstitution>)//, e:EvarMap)
@@ -77,17 +86,19 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
     // ensures o.Some? ==> forall e :: e in o.value.Values ==> e in emap.evar_map
     ensures o.Some? ==> forall e :: o.value.in2(e) ==> e in emap.evar_map
     // ensures o.Some? ==> forall v :: v in goal.clause.terms && v.Var? ==> o.value.in1(v) // IS WRONG
-    ensures o.Some? ==> forall v :: v in head_clause.terms && v.Var? ==> o.value.in1(v)
-    ensures o.Some? ==> forall i:nat | i < |head_clause.terms| && head_clause.terms[i].Var? :: o.value.get1(head_clause.terms[i]) == goal.evar_terms[i]
+    ensures o.Some? ==> forall v :: v in head_clause.terms ==> o.value.in1(v)
     ensures head_clause.is_ground() && o.Some? ==> goal.emap_fully_resolved(emap) // o.value is empty map
     ensures head_clause.is_ground() && o.Some? ==> goal.clause.make_fact(make_subst(emap, goal.subst)) == head_clause
     // ensures o.Some? ==> goal.clause.make_fact(make_subst(emap,goal.subst)) == head_clause.make_fact(make_subst(emap,o.value))
     ensures emap.monotonically_increasing() // ensures forall e :: e in old(emap.evar_map) ==> e in emap.evar_map
+    ensures o.Some? ==> forall i:nat | i < |head_clause.terms| :: o.value.get1(head_clause.terms[i]) == goal.evar_terms[i]
     // ensures forall v :: goal.subst.in1(v) && v.Var? && o.Some? ==> o.value.in1(v) && goal.subst.get1(v) == o.value.get1(v)
-    ensures o.Some? ==> forall i:nat | i < |head_clause.terms| ::
-                          (if head_clause.terms[i].Var? then o.value.get1(head_clause.terms[i]) == goal.evar_terms[i]
-                          else emap.evar_map[goal.evar_terms[i]].Some?)
+    // ensures o.Some? ==> forall i:nat | i < |head_clause.terms| ::
+    //                       (if head_clause.terms[i].Var? then o.value.get1(head_clause.terms[i]) == goal.evar_terms[i]
+    //                       else emap.evar_map[goal.evar_terms[i]].Some?)
+    ensures o.Some? ==> forall j :: 0 <= j < |head_clause.terms| ==> head_clause.terms[j].Const? ==> emap.evar_map[goal.evar_terms[j]].Some? && Const(emap.evar_map[goal.evar_terms[j]].value) == head_clause.terms[j]
     // |goal.evar_terms| == |o.value.Values| // is this true?
+    
 {
     // check if all terms in clause have correct mapping in goal.evar_terms
     var subst:EvarSubstitution := new_bijective_map<VarTerm, Evar>();
@@ -99,8 +110,8 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
         invariant forall e :: subst.in2(e) ==> e in emap.evar_map
         invariant emap.monotonically_increasing() // invariant forall e :: e in old(emap.evar_map) ==> e in emap.evar_map
         invariant emap.is_more_resolved()
-        invariant forall j :: (0 <= j < i && head_clause.terms[j].Var?) ==> subst.in1(head_clause.terms[j])
-        invariant forall j:nat | j < i && head_clause.terms[j].Var? :: subst.get1(head_clause.terms[j]) == goal.evar_terms[j]
+        invariant forall j :: 0 <= j < i ==> subst.in1(head_clause.terms[j]) && subst.get1(head_clause.terms[j]) == goal.evar_terms[j]
+        // invariant forall j:nat | j < i && head_clause.terms[j].Var? :: subst.get1(head_clause.terms[j]) == goal.evar_terms[j]
         invariant forall j :: 0 <= j < i ==> head_clause.terms[j].Const? ==> emap.evar_map[goal.evar_terms[j]].Some? && Const(emap.evar_map[goal.evar_terms[j]].value) == head_clause.terms[j]
         invariant forall j :: i <= j < |head_clause.terms| ==> !subst.in1(head_clause.terms[j])
         invariant forall j :: i <= j < |goal.evar_terms| ==> !subst.in2(goal.evar_terms[j])
@@ -118,6 +129,7 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
             var e := emap.lookup(goal.evar_terms[i]);
             match e {
                 case None => {
+                    subst := subst.insert(head_clause.terms[i], goal.evar_terms[i]);
                     emap.resolve(goal.evar_terms[i], constant);
                 }
                 case Some(constant') =>
@@ -125,9 +137,9 @@ method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Opt
                         // ignore rule
                         return None;
                     }
-                    // } else {
-                    //     subst := subst[head_clause.terms[i] := goal.evar_terms[i]];
-                    // }
+                    else {
+                        subst := subst.insert(head_clause.terms[i], goal.evar_terms[i]);
+                    }
             }
         }
     }
@@ -297,7 +309,8 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
                 invariant forall i :: 0 <= i < j ==> search_clauses[i].valid()
                 invariant valid_rule(rule)
                 // invariant forall v :: goal.subst.in1(v) && v.Var? ==> subst.in1(v) && goal.subst.get1(v) == subst.get1(v)
-                invariant forall ii :: 0 <= ii < |goal.clause.terms| && (rule.head.terms[ii].Var?) ==> subst.in1(rule.head.terms[ii]) && subst.get1(rule.head.terms[ii]) == goal.subst.get1(goal.clause.terms[ii])
+                invariant forall ii :: 0 <= ii < |goal.clause.terms| ==> subst.in1(rule.head.terms[ii]) && subst.get1(rule.head.terms[ii]) == goal.subst.get1(goal.clause.terms[ii])
+                invariant forall ii :: 0 <= ii < |rule.head.terms| ==> rule.head.terms[ii].Const? ==> emap.evar_map[goal.evar_terms[ii]].Some? && Const(emap.evar_map[goal.evar_terms[ii]].value) == rule.head.terms[ii];
                 invariant forall i :: 0 <= i < j ==> forall v :: search_clauses[i].subst.in1(v) && v.Var? ==> subst.in1(v) && search_clauses[i].subst.get1(v) == subst.get1(v)
                 // invariant forall k in old(subst) ==> k in subst
             {
@@ -378,7 +391,7 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
                 // assert(forall e | e in goal.evar_terms :: e in subst.Values)
                 // assert goal.emap_fully_resolved(emap);
                 assert forall sc | sc in search_clauses :: forall v:VarTerm | v in sc.clause.terms :: concreteSubst[v].Const?;
-                assert forall e | e in goal.subst.Values() :: (exists sc | sc in search_clauses :: e in sc.subst.Values());
+                // assert forall e | e in goal.subst.Values() :: (exists sc | sc in search_clauses :: e in sc.subst.Values());
                 // var pp:set<VarTerm>;
                 // for k := 0 to |search_clauses| 
                 //     invariant pp == 
@@ -394,7 +407,21 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
                 // assert ToSet(goal.clause.terms) <= (set x:Term | ((forall sc :: sc in search_clauses && x in sc.clause.terms) :: x));
                 // set x : T | P(x) :: x
                 // assert forall t:VarTerm | t in goal.clause.terms :: emap.evar_map[goal.subst.get1(t)].Some?;
+                /* 
+                    assert forall i :: 0 <= i < |goal.clause.terms| ==> goal.subst.get1(goal.clause.terms[i]) == goal.evar_terms[i] == subst.get1(rule.head.terms[i])
+                    goal.clause.make_fact(goalSubst).terms[i] == emap.evar_map[goal.subst.get1(goal.clause.terms[i])]
+                    rule.head.make_fact(concreteSubst).terms[i] == emap.evar_map[subst.get1(rule.head.terms[i])]
+                    ==> goal.clause.make_fact(goalSubst).terms[i] == rule.head.make_fact(concreteSubst).terms[i]
+                */
                 assert goal.clause.substitution_concrete(goalSubst);
+                assert forall i :: 0 <= i < |goal.clause.terms| ==> goal.subst.get1(goal.clause.terms[i]) == goal.evar_terms[i] == subst.get1(rule.head.terms[i]);
+                assert forall i :: 0 <= i < |goal.clause.terms| ==> goal.clause.make_fact(goalSubst).terms[i] == Const(emap.evar_map[goal.subst.get1(goal.clause.terms[i])].value);
+                assert forall j :: 0 <= j < |rule.head.terms| ==> rule.head.terms[j].Const? ==> emap.evar_map[goal.evar_terms[j]].Some? && Const(emap.evar_map[goal.evar_terms[j]].value) == rule.head.terms[j];
+                assert forall i :: 0 <= i < |goal.clause.terms| ==> rule.head.make_fact(concreteSubst).terms[i] == Const(emap.evar_map[subst.get1(rule.head.terms[i])].value);
+                /*
+                    for all evars in goal.subst.Values, those evars also exist in search_clauses.subst.values for all search_clauses
+                 */
+
                 assert rule.head.make_fact(concreteSubst) == goal.clause.make_fact(goalSubst);
                 return true, Some(proof);
             }
@@ -470,19 +497,27 @@ method get_query_search_clause(query:Clause, emap:EvarMap) returns (sc:SearchCla
     requires valid_clause(query)
     modifies emap
     ensures emap.inv()
+    ensures sc.subst.valid()
     ensures sc.valid()
     ensures sc.valid_emap(emap)
     ensures sc.clause == query
 {
+    reveal ToSet();
     var evar_terms:seq<Evar> := [];
     var subst: EvarSubstitution := new_bijective_map<VarTerm, Evar>();
+    assert(subst.Values() == {});
+    assert(ToSet(evar_terms) == {});
     for i := 0 to |query.terms|
         invariant emap.inv()
         invariant subst.valid()
+        invariant |evar_terms| == i
+        invariant reveal ToSet(); ToSet(evar_terms) == subst.Values()
         invariant forall e:Evar :: e in evar_terms ==> e in emap.evar_map
         invariant forall e:Evar :: subst.in2(e) ==> e in emap.evar_map
         invariant forall e:Evar :: subst.in2(e) ==> e in evar_terms
         invariant forall j :: i <= j < |query.terms| ==> !subst.in1(query.terms[j])
+        invariant forall j:nat | j < i :: (subst.in1(query.terms[j]) && subst.get1(query.terms[j]) == evar_terms[j])
+        invariant forall j:nat | j < i :: query.terms[j].Const? ==> emap.evar_map[evar_terms[j]] == Some(query.terms[j].c)
     {
         var term := query.terms[i];
         match term {
@@ -492,7 +527,13 @@ method get_query_search_clause(query:Clause, emap:EvarMap) returns (sc:SearchCla
                         // subst := subst[term := new_ev];
                         subst := subst.insert(term, new_ev);
                     }
-            case Const(c) => {} // TODO: Create new evars and map them to the const?
+            case Const(c) => {
+                        var new_ev := emap.get_new_evar();
+                        evar_terms := evar_terms + [new_ev];
+                        // subst := subst[term := new_ev];
+                        subst := subst.insert(term, new_ev);
+                        emap.resolve(new_ev, c);
+            } 
         }
     }
 
