@@ -16,19 +16,29 @@ class UFMap {
     method Init() 
     modifies this
     ensures Valid()
+    ensures ids == map[]
+    ensures vals == map[]
     { 
         ctr := 0;
         ids := map[];
+        vals := map[];
     }
 
     method Insert(i : nat, v : nat)
     modifies this
     requires Valid()
     ensures Valid()
+    ensures i in ids
+    ensures vals[ids[i]] == v
     {
-        ids := ids[i := this.ctr];
-        vals := vals[this.ctr := v];
-        ctr := ctr + 1;
+        if i !in ids {
+            ids := ids[i := this.ctr];
+            vals := vals[this.ctr := v];
+            ctr := ctr + 1;
+        }
+        else {
+            vals := vals[ids[i] := v];
+        }
     }
 
     function method Get(i : nat) : (res : Option<nat>)
