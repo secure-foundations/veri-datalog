@@ -50,19 +50,11 @@ class UFMap<K(==), V(==)> {
         if i in ids then Some(vals[ids[i]]) else None
     }
 
-    method Union(i : K, j : K)
-    modifies this
-    modifies this
-    requires Valid()
-    requires i in ids && j in ids
-    ensures Valid()
-    ensures ids.Keys == old(ids.Keys)
-    ensures forall k | k in ids && ids[k] != ids[j] :: ids[k] == old(ids[k]);
-    ensures forall k | k in ids && ids[k] == ids[j] :: ids[k] == old(ids[i]);
-     {
-        var toUpdate := map k | k in ids && ids[k] == ids[j] :: ids[i];
-        ids := ids + toUpdate;
-    }
+    function method Elem(i : K) : bool
+    reads this
+    ensures Elem(i) == (i in ids) { 
+        i in ids
+    } 
 
     function method EqualKey(i : K, j : K) : (res : bool)
         reads this
@@ -72,5 +64,20 @@ class UFMap<K(==), V(==)> {
     {
         ids[i] == ids[j]
     }
+
+    method Union(i : K, j : K)
+    modifies this
+    modifies this
+    requires Valid()
+    requires i in ids && j in ids
+    ensures Valid()
+    ensures ids.Keys == old(ids.Keys)
+    ensures forall k | Elem(k) && !(EqualKey(k, j)) :: Get(k) == old(Get(k))
+    ensures forall k | Elem(k) && (EqualKey(k, j)) :: Get(k) == Get(i)
+     {
+        var toUpdate := map k | k in ids && ids[k] == ids[j] :: ids[i];
+        ids := ids + toUpdate;
+    }
+
 
 }
