@@ -1,9 +1,9 @@
 datatype Option<A> = | Some(v : A) | None
     
-class UFMap { 
+class UFMap<K(==), V(==)> { 
     var ctr : nat
-    var ids : map<nat, nat>
-    var vals : map<nat, nat>
+    var ids : map<K, nat>
+    var vals : map<nat, V>
 
     predicate Valid()
     reads this
@@ -24,7 +24,7 @@ class UFMap {
         vals := map[];
     }
 
-    method Insert(i : nat, v : nat)
+    method Insert(i : K, v : V)
     modifies this
     requires Valid()
     ensures Valid()
@@ -41,7 +41,7 @@ class UFMap {
         }
     }
 
-    function method Get(i : nat) : (res : Option<nat>)
+    function method Get(i : K) : (res : Option<V>)
     reads this
     requires Valid()
     ensures res.Some? ==> i in ids && res == Some(vals[ids[i]])
@@ -50,7 +50,7 @@ class UFMap {
         if i in ids then Some(vals[ids[i]]) else None
     }
 
-    method Union(i : nat, j : nat)
+    method Union(i : K, j : K)
     modifies this
     modifies this
     requires Valid()
@@ -64,7 +64,7 @@ class UFMap {
         ids := ids + toUpdate;
     }
 
-    function method EqualKey(i : nat, j : nat) : (res : bool)
+    function method EqualKey(i : K, j : K) : (res : bool)
         reads this
         requires i in ids && j in ids 
         requires Valid()
