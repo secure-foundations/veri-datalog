@@ -58,10 +58,11 @@ class UFMap<K(!new, ==), V(==)> {
 
     function method EqualKey(i : K, j : K) : (res : bool)
         reads this
-        requires i in ids && j in ids 
         requires Valid()
     {
-        ids[i] == ids[j]
+        (i !in ids && j !in ids) ||
+        (i in ids && j in ids && 
+        ids[i] == ids[j])
     }
 
     method Union(i : K, j : K)
