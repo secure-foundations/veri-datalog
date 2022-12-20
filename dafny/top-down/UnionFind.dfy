@@ -1,6 +1,6 @@
 datatype Option<A> = | Some(v : A) | None
     
-class UFMap<K(==), V(==)> { 
+class UFMap<K(!new, ==), V(==)> { 
     var ctr : nat
     var ids : map<K, nat>
     var vals : map<nat, V>
@@ -18,6 +18,7 @@ class UFMap<K(==), V(==)> {
     ensures Valid()
     ensures ids == map[]
     ensures vals == map[]
+    ensures forall v :: Get(v) == None
     { 
         ctr := 0;
         ids := map[];
@@ -29,7 +30,8 @@ class UFMap<K(==), V(==)> {
     requires Valid()
     ensures Valid()
     ensures i in ids
-    ensures vals[ids[i]] == v
+    ensures forall j | j in ids && !EqualKey(j, i) :: Get(j) == old(Get(j))
+    ensures forall j | j in ids && EqualKey(j, i) :: Get(j) == Some(v)
     {
         if i !in ids {
             ids := ids[i := this.ctr];
@@ -44,15 +46,13 @@ class UFMap<K(==), V(==)> {
     function method Get(i : K) : (res : Option<V>)
     reads this
     requires Valid()
-    ensures res.Some? ==> i in ids && res == Some(vals[ids[i]])
-    ensures res.None? ==> i !in ids
      { 
         if i in ids then Some(vals[ids[i]]) else None
     }
 
     function method Elem(i : K) : bool
     reads this
-    ensures Elem(i) == (i in ids) { 
+     { 
         i in ids
     } 
 
@@ -60,7 +60,6 @@ class UFMap<K(==), V(==)> {
         reads this
         requires i in ids && j in ids 
         requires Valid()
-        ensures res ==> Get(i) == Get(j)
     {
         ids[i] == ids[j]
     }
@@ -69,9 +68,9 @@ class UFMap<K(==), V(==)> {
     modifies this
     modifies this
     requires Valid()
-    requires i in ids && j in ids
+    requires Elem(i) && Elem(j)
     ensures Valid()
-    ensures ids.Keys == old(ids.Keys)
+    ensures forall k :: Elem(k) == old(Elem(k)) 
     ensures forall k | Elem(k) && !(EqualKey(k, j)) :: Get(k) == old(Get(k))
     ensures forall k | Elem(k) && (EqualKey(k, j)) :: Get(k) == Get(i)
      {
