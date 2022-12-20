@@ -74,6 +74,7 @@ class UFMap<K(!new, ==), V(==)> {
     ensures forall k :: Elem(k) == old(Elem(k)) 
     ensures forall k | Elem(k) && !(EqualKey(k, j)) :: Get(k) == old(Get(k))
     ensures forall k | Elem(k) && (EqualKey(k, j)) :: Get(k) == Get(i)
+    ensures EqualKey(i, j)
      {
         var toUpdate := map k | k in ids && ids[k] == ids[j] :: ids[i];
         ids := ids + toUpdate;
