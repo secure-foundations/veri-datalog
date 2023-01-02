@@ -17,13 +17,6 @@ module BijectiveMapModule {
             // && (forall t1:T1, t2:T2 :: (t2, t1) in r_to_l.Items ==> (t1, t2) in l_to_r.Items)
         }
 
-        // function method {:opaque} in1(e:T1) : bool
-        //     requires valid()
-        //     ensures in1(e) == (e in l_to_r)
-        // {
-        //     e in l_to_r
-        // }
-
         function method in1(e:T1) : bool
             requires valid()
             ensures in1(e) == (e in l_to_r)

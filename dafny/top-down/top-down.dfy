@@ -6,29 +6,6 @@ include "std-lib/src/Collections/Sequences/Seq.dfy"
 import opened Wrappers
 import opened Seq
 
-/*
-
-Search procedure:
-
-global evar_map
-
-search(goal: SearchClause) returns (ghost proof: Option<ProofTree>, b: bool)
-  ensures b == True <==> (proof == Some(proof') && proof'.valid())
-{
-  // goal: R(arg1, arg2, ..., argN): where the args are evars in the evar_map
-  rules <- all rules with heads of the form R(arg1, arg2, ..., argN)
-  for rule in rules:
-    match unify(rule.Head, goal) with
-    | None => continue; // can't instantiate this rule due to conflicted ground terms
-    | Some(subst) =>
-      // subst is a map<var --> evar>
-      substitutedBody: seq<SearchClause> = evarify(rule.Body, subst);
-      for searchClause: SearchClause in substitutedBody:
-        search(searchClause)
-}
-
-*/
-
 method find_matching_rules(rules: seq<Rule>, goal:SearchClause) returns (c:seq<Rule>)
     requires valid_program(rules)
     ensures forall r:Rule :: r in c ==> r.head.name == goal.name && |r.head.terms| == |goal.evar_terms|
@@ -46,26 +23,8 @@ method find_matching_rules(rules: seq<Rule>, goal:SearchClause) returns (c:seq<R
             matching_rules := matching_rules + [rule];
         }
     }
-    // TODO postcondition on goal.clause, based on bijective map stuff
     return matching_rules;
 }
-
-/*
-Goal = A(evar1, evar1) (A(Y,Y)) goal.subst == Y-->evar1
-RuleHead = A("x", X)
-
-resolve evar1 to "x"
-subst == X-->evar1
------------------------------
-Goal = A(evar1, evar2) (A(X, Y)) goal.subst == X-->evar1, Y-->evar2
-RuleHead = A(P, P)
-
-in unify of A(P, P)
-    if P in subst already:
-        update goal.subst such that everything that mapped to evar2 now maps to subst[P]
-subst == P-->evar1, P-->evar2
-
-*/
 
 method unify(head_clause:Clause, goal:SearchClause, emap:EvarMap) returns (o:Option<EvarSubstitution>)//, e:EvarMap)
     requires emap.inv()
@@ -227,10 +186,6 @@ method evarify(clause:Clause, subst:EvarSubstitution, emap:EvarMap)
     sc := SearchClause(clause.name, evar_terms, clause, local_subst);
 }
 
-/*
-forall sc:SearchClause, forall emap:EvarMap, if sc.emap_fully_resolved(old(emap)) && emap.monotonically_increasing() then sc.emap_fully_resolved(emap)
-*/
-
 method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) returns (b:bool, ghost proof: Option<Proof>)//, e:EvarMap)
     requires valid_program(rules)
     requires emap.inv()
@@ -377,23 +332,12 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
                 var proof := combine_proofs(rules, rule, concreteSubst, proofs);
                 assert(goal.subst.valid());
                 var goalSubst := make_subst(emap, goal.subst);
-                // assert();
-                // concreteSubst is concrete
-                // ==> forall vars in subst, subst[vars].Const?
-                // but subst[rule.head.terms[i]] == goal.subst[goal.clause.terms[i]] && |rule.head.terms| == |goal.clause.terms|
-                // and also |subst.Keys| == |goal.subst.Keys|
-                // therefore, all vars in goal.subst map to Consts
                 // assert forall e:VarTerm | subst.in1(e) :: emap.evar_map[subst.get1(e)].Some?;
                 // assert(forall e | e in goal.evar_terms :: e in subst.Values)
                 // assert goal.emap_fully_resolved(emap);
                 assert forall sc | sc in search_clauses :: forall v:VarTerm | v in sc.clause.terms :: concreteSubst[v].Const?;
                 // assert forall e | e in goal.subst.Values() :: (exists sc | sc in search_clauses :: e in sc.subst.Values());
                 // var pp:set<VarTerm>;
-                // for k := 0 to |search_clauses| 
-                //     invariant pp == 
-                // {
-                //     pp := pp + (ToSet(search_clauses[i].clause.terms));
-                // }
                 // assert(forall v:VarTerm | v in rule.head.terms :: (exists c | c in rule.body :: v in c.terms));
                 assert(seq(|search_clauses|, i requires 0 <= i < |search_clauses| => search_clauses[i].clause) == rule.body);
                 // assert(forall v:VarTerm | v in rule.head.terms :: match_exists(v, rule.body));
@@ -414,10 +358,6 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
                 assert forall i :: 0 <= i < |goal.clause.terms| ==> goal.clause.make_fact(goalSubst).terms[i] == Const(emap.evar_map[goal.subst.get1(goal.clause.terms[i])].value);
                 assert forall j :: 0 <= j < |rule.head.terms| ==> rule.head.terms[j].Const? ==> emap.evar_map[goal.evar_terms[j]].Some? && Const(emap.evar_map[goal.evar_terms[j]].value) == rule.head.terms[j];
                 assert forall i :: 0 <= i < |goal.clause.terms| ==> rule.head.make_fact(concreteSubst).terms[i] == Const(emap.evar_map[subst.get1(rule.head.terms[i])].value);
-                /*
-                    for all evars in goal.subst.Values, those evars also exist in search_clauses.subst.values for all search_clauses
-                 */
-
                 assert rule.head.make_fact(concreteSubst) == goal.clause.make_fact(goalSubst);
                 return true, Some(proof);
             }

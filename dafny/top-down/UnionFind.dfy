@@ -6,7 +6,7 @@ class UFMap<K(!new, ==), V(==)> {
     var vals : map<nat, V>
 
     predicate Valid()
-    reads this
+        reads this
     {
         (forall j | j in ids :: ids[j] < ctr)
         &&
@@ -14,11 +14,11 @@ class UFMap<K(!new, ==), V(==)> {
     }
 
     method Init() 
-    modifies this
-    ensures Valid()
-    ensures ids == map[]
-    ensures vals == map[]
-    ensures forall v :: Get(v) == None
+        modifies this
+        ensures Valid()
+        ensures ids == map[]
+        ensures vals == map[]
+        ensures forall v :: Get(v) == None
     { 
         ctr := 0;
         ids := map[];
@@ -26,12 +26,12 @@ class UFMap<K(!new, ==), V(==)> {
     }
 
     method Insert(i : K, v : V)
-    modifies this
-    requires Valid()
-    ensures Valid()
-    ensures i in ids
-    ensures forall j | j in ids && !EqualKey(j, i) :: Get(j) == old(Get(j))
-    ensures forall j | j in ids && EqualKey(j, i) :: Get(j) == Some(v)
+        modifies this
+        requires Valid()
+        ensures Valid()
+        ensures i in ids
+        ensures forall j | j in ids && !EqualKey(j, i) :: Get(j) == old(Get(j))
+        ensures forall j | j in ids && EqualKey(j, i) :: Get(j) == Some(v)
     {
         if i !in ids {
             ids := ids[i := this.ctr];
@@ -44,15 +44,15 @@ class UFMap<K(!new, ==), V(==)> {
     }
 
     function method Get(i : K) : (res : Option<V>)
-    reads this
-    requires Valid()
-     { 
+        reads this
+        requires Valid()
+    { 
         if i in ids then Some(vals[ids[i]]) else None
     }
 
     function method Elem(i : K) : bool
-    reads this
-     { 
+        reads this
+    { 
         i in ids
     } 
 
@@ -66,16 +66,16 @@ class UFMap<K(!new, ==), V(==)> {
     }
 
     method Union(i : K, j : K)
-    modifies this
-    modifies this
-    requires Valid()
-    requires Elem(i) && Elem(j)
-    ensures Valid()
-    ensures forall k :: Elem(k) == old(Elem(k)) 
-    ensures forall k | Elem(k) && !(EqualKey(k, j)) :: Get(k) == old(Get(k))
-    ensures forall k | Elem(k) && (EqualKey(k, j)) :: Get(k) == Get(i)
-    ensures EqualKey(i, j)
-     {
+        modifies this
+        modifies this
+        requires Valid()
+        requires Elem(i) && Elem(j)
+        ensures Valid()
+        ensures forall k :: Elem(k) == old(Elem(k)) 
+        ensures forall k | Elem(k) && !(EqualKey(k, j)) :: Get(k) == old(Get(k))
+        ensures forall k | Elem(k) && (EqualKey(k, j)) :: Get(k) == Get(i)
+        ensures EqualKey(i, j)
+    {
         var toUpdate := map k | k in ids && ids[k] == ids[j] :: ids[i];
         ids := ids + toUpdate;
     }

@@ -122,12 +122,6 @@ class EvarMap {
         && forall e:Evar | e in old(this.evar_map) :: (old(this.evar_map)[e].Some? ==> old(this.evar_map)[e] == this.evar_map[e])
     }
 
-    // twostate predicate monotonically_increasing()
-    //     reads this
-    // {
-    //     forall e :: e in old(this.evar_map) ==> e in this.evar_map // TODO: Is a subset check better for the verifier?
-    // }
-
     predicate fully_resolved() 
         reads this
     {
@@ -149,27 +143,9 @@ function method make_subst(emap: EvarMap, esubst: EvarSubstitution) : Substituti
     // ensures  forall v:VarTerm :: esubst.in1(v) ==> (emap.evar_map[esubst.get1(v)].Some? ==> (make_subst(emap, esubst)[v] == Const(emap.evar_map[esubst.get1(v)].value)))
 {
     // reveal esubst.in1();
-    // map v:Term | esubst.in1(v) :: (
     map v:Term | v in esubst.l_to_r :: ( // TODO: use in1()
         match emap.evar_map[esubst.get1(v)]
             case Some(c) => Const(c)
             case None    => v
     )
 }
-
-
-// function method make_subst(emap: EvarMap, esubst: EvarSubstitution) : Substitution
-//     reads emap
-//     requires emap.inv()
-//     requires forall e:Evar :: e in esubst.Values ==> e in emap.evar_map
-//     ensures  emap.fully_resolved() ==> forall t :: t in make_subst(emap, esubst).Values  ==> t.Const?
-//     ensures  forall v:VarTerm :: v in esubst ==> v in make_subst(emap, esubst)
-// {
-//     // reveal esubst.in1();
-//     // map v:Term | esubst.in1(v) :: (
-//     map v:Term | v in esubst :: ( // TODO: use in1()
-//         match emap.evar_map[esubst[v]]
-//             case Some(c) => Const(c)
-//             case None    => v
-//     )
-// }
