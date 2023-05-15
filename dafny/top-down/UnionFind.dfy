@@ -5,7 +5,7 @@ class UFMap<K(!new, ==), V(==)> {
     var ids : map<K, nat>
     var vals : map<nat, V>
 
-    predicate Valid()
+    ghost predicate Valid()
         reads this
     {
         (forall j | j in ids :: ids[j] < ctr)
@@ -43,20 +43,20 @@ class UFMap<K(!new, ==), V(==)> {
         }
     }
 
-    function method Get(i : K) : (res : Option<V>)
+    function Get(i : K) : (res : Option<V>)
         reads this
         requires Valid()
     { 
         if i in ids then Some(vals[ids[i]]) else None
     }
 
-    function method Elem(i : K) : bool
+    function Elem(i : K) : bool
         reads this
     { 
         i in ids
     } 
 
-    function method EqualKey(i : K, j : K) : (res : bool)
+    function EqualKey(i : K, j : K) : (res : bool)
         reads this
         requires Valid()
     {

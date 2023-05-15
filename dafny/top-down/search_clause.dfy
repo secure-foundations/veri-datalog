@@ -10,7 +10,7 @@ import opened BijectiveMapModule
 // TODO write some documentation here :)
 datatype SearchClause = SearchClause(name:string, evar_terms:seq<Evar>, clause: Clause, subst: EvarSubstitution)
 {
-    predicate valid()
+    ghost predicate valid()
     {
         && valid_clause(clause) // Restriction
         // && distinct(evar_terms) // Restriction
@@ -25,7 +25,7 @@ datatype SearchClause = SearchClause(name:string, evar_terms:seq<Evar>, clause: 
         //                                          && subst[clause.terms[i]] == evar_terms[i])
     }
 
-    predicate valid_emap(emap: EvarMap) 
+    ghost predicate valid_emap(emap: EvarMap) 
         reads emap
         requires valid() // TODO: This is required
     {
@@ -36,7 +36,7 @@ datatype SearchClause = SearchClause(name:string, evar_terms:seq<Evar>, clause: 
         // multiset(evar_terms) <= multiset(emap.evar_map.Keys)
     }
 
-    predicate emap_fully_resolved(emap: EvarMap)
+    ghost predicate emap_fully_resolved(emap: EvarMap)
         reads emap
         requires valid()
         requires valid_emap(emap)

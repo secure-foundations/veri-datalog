@@ -24,6 +24,7 @@ class EvarMap {
         evar_map := map[];
         next_evar := 0;
         new;
+        reveal inv();
     }
 
     // TODO: Check if this implements a copy constructor
@@ -35,12 +36,13 @@ class EvarMap {
         ensures this != emap
         ensures this.inv()
     {
+        reveal emap.inv();
         this.evar_map := map e : Evar | e in emap.evar_map :: emap.evar_map[e];
         this.next_evar := emap.next_evar;
         new;
     }
 
-    predicate inv 
+    ghost predicate {:opaque} inv 
         reads this
     {
         && (next_evar >= 0)
@@ -54,10 +56,11 @@ class EvarMap {
         ensures e == old(next_evar)
         ensures next_evar == old(next_evar) + 1
         ensures evar_map == old(evar_map)[e := None]
-        ensures |evar_map| == |old(evar_map)| + 1 // TODO: Can probably remove this
+        // ensures |evar_map| == |old(evar_map)| + 1 // TODO: Can probably remove this
         ensures evar_map.Keys == old(evar_map).Keys + {e}
         ensures inv()
     {
+        reveal this.inv();
         evar_map := evar_map[next_evar := None];
         next_evar := next_evar + 1;
         return next_evar - 1;
@@ -70,15 +73,16 @@ class EvarMap {
         requires evar_map[e] == None
         ensures inv()
         ensures evar_map == old(evar_map)[e := Some(v)]
-        ensures |evar_map| == |old(evar_map)| // TODO: Can remove this
+        // ensures |evar_map| == |old(evar_map)| // TODO: Can remove this
         ensures evar_map.Keys == old(evar_map).Keys
         ensures this.is_more_resolved()
     {
         //print "\t\tresolving ", e, " to ", v, " in ", this.evar_map, "\n";
+        reveal this.inv();
         evar_map := evar_map[e := Some(v)];
     }
 
-    function method lookup(e:Evar) : Option<string>
+    function lookup(e:Evar) : Option<string>
         reads this
         requires inv()
         requires e in evar_map
@@ -98,6 +102,7 @@ class EvarMap {
         ensures this.inv()
         ensures unchanged(emap)
     {
+        reveal this.inv();
         this.evar_map := emap.evar_map;
         this.next_evar := emap.next_evar;
     }
@@ -122,7 +127,7 @@ class EvarMap {
         && forall e:Evar | e in old(this.evar_map) :: (old(this.evar_map)[e].Some? ==> old(this.evar_map)[e] == this.evar_map[e])
     }
 
-    predicate fully_resolved() 
+    ghost predicate fully_resolved() 
         reads this
     {
         forall e :: e in evar_map ==> evar_map[e].Some?
@@ -130,7 +135,7 @@ class EvarMap {
 }
 
 
-function method make_subst(emap: EvarMap, esubst: EvarSubstitution) : Substitution
+function make_subst(emap: EvarMap, esubst: EvarSubstitution) : Substitution
     reads emap
     requires emap.inv()
     requires esubst.valid()
@@ -139,10 +144,11 @@ function method make_subst(emap: EvarMap, esubst: EvarSubstitution) : Substituti
     ensures  forall v:Term :: esubst.in1(v) ==> v in make_subst(emap, esubst)
     // ensures forall v:VarTerm :: (esubst.in1(v) && esubst.get1(v) in emap.evar_map) 
     //                     ==> (make_subst(emap, esubst)[v].Const?)
-    ensures  forall v:VarTerm :: v in esubst.l_to_r ==> (emap.evar_map[esubst.get1(v)].Some? ==> (make_subst(emap, esubst)[v] == Const(emap.evar_map[esubst.get1(v)].value)))
+    ensures  reveal esubst.valid(); forall v:VarTerm :: v in esubst.l_to_r ==> (emap.evar_map[esubst.get1(v)].Some? ==> (make_subst(emap, esubst)[v] == Const(emap.evar_map[esubst.get1(v)].value)))
     // ensures  forall v:VarTerm :: esubst.in1(v) ==> (emap.evar_map[esubst.get1(v)].Some? ==> (make_subst(emap, esubst)[v] == Const(emap.evar_map[esubst.get1(v)].value)))
+    ensures emap.inv()
 {
-    // reveal esubst.in1();
+    reveal esubst.valid();
     map v:Term | v in esubst.l_to_r :: ( // TODO: use in1()
         match emap.evar_map[esubst.get1(v)]
             case Some(c) => Const(c)

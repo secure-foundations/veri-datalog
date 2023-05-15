@@ -6,7 +6,7 @@ module BijectiveMapModule {
     import opened Maps
 
     datatype BijectiveMap<T1, T2> = BijectiveMap(l_to_r:map<T1, T2>, r_to_l:map<T2, T1>) {
-        predicate valid() {
+        predicate {:opaque} valid() {
             (forall k:T1 :: k in l_to_r ==>
                 l_to_r[k] in r_to_l && r_to_l[l_to_r[k]] == k)
             && (forall k:T2 :: k in r_to_l ==> 
@@ -17,21 +17,21 @@ module BijectiveMapModule {
             // && (forall t1:T1, t2:T2 :: (t2, t1) in r_to_l.Items ==> (t1, t2) in l_to_r.Items)
         }
 
-        function method in1(e:T1) : bool
+        function in1(e:T1) : bool
             requires valid()
             ensures in1(e) == (e in l_to_r)
         {
             e in l_to_r
         }
 
-        function method in2(e:T2) : bool
+        function in2(e:T2) : bool
             requires valid()
             ensures in2(e) == (e in r_to_l)
         {
             e in r_to_l
         }
 
-        function method get1(e:T1) : T2
+        function get1(e:T1) : T2
             requires valid()
             requires in1(e)
             requires e in l_to_r
@@ -40,7 +40,7 @@ module BijectiveMapModule {
             l_to_r[e]
         }
 
-        function method insert(e1:T1, e2:T2) : BijectiveMap<T1, T2>
+        function insert(e1:T1, e2:T2) : BijectiveMap<T1, T2>
             requires valid()
             // requires !in1(e1) && !in2(e2)
             requires (e1 !in l_to_r && e2 !in r_to_l)
@@ -50,14 +50,15 @@ module BijectiveMapModule {
             ensures insert(e1, e2).in1(e1)
             ensures insert(e1, e2).in2(e2)
         {
+            reveal valid();
             BijectiveMap(l_to_r[e1 := e2], r_to_l[e2 := e1])
         }
 
-        function method equal(b:BijectiveMap<T1, T2>) : bool
+        function equal(b:BijectiveMap<T1, T2>) : bool
             requires valid()
         {
-            forall e1:T1 :: e1 in l_to_r ==> e1 in b.l_to_r
-            && forall e2:T2 :: e2 in r_to_l ==> e2 in b.r_to_l
+            && (forall e1:T1 :: e1 in l_to_r ==> e1 in b.l_to_r)
+            && (forall e2:T2 :: e2 in r_to_l ==> e2 in b.r_to_l)
         }
 
 
@@ -79,7 +80,7 @@ module BijectiveMapModule {
             l_to_r.Items
         }
 
-        predicate {:opaque} IsSubsetOf(b:BijectiveMap<T1,T2>)
+        opaque ghost predicate IsSubsetOf(b:BijectiveMap<T1,T2>)
             requires valid()
             requires b.valid()
         {
@@ -140,7 +141,8 @@ module BijectiveMapModule {
         ensures b.Values() == {}
         ensures b.Items() == {}
     {
-        return BijectiveMap(map[], map[]);
+        b := BijectiveMap(map[], map[]);
+        reveal b.valid();
     }
 
     // lemma InsertItems<T1,T2>(b:BijectiveMap<T1,T2>, e1:T1, e2:T2)

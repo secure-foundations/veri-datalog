@@ -14,22 +14,22 @@ type VarTerm = t:Term | t.Var? witness Var("")
 type Substitution = map<Term,Term>
 datatype Clause = Clause(name:string, terms:seq<Term>)
 {
-  predicate is_ground() 
+  ghost predicate is_ground() 
   {
     forall t :: t in terms ==> t.Const?
   }
 
-  predicate substitution_complete(sub:Substitution) 
+  ghost predicate substitution_complete(sub:Substitution) 
   {
     forall t :: t in terms && t.Var? ==> t in sub
   }
 
-  predicate substitution_concrete(sub:Substitution) 
+  ghost predicate substitution_concrete(sub:Substitution) 
   {
     substitution_complete(sub) && forall t :: t in terms && t.Var? ==> sub[t].Const?
   }
 
-  function make_fact(sub:Substitution) : Fact
+  ghost function make_fact(sub:Substitution) : Fact
     requires substitution_concrete(sub)
   {
     var new_terms := 
@@ -49,7 +49,7 @@ type Program = seq<Rule>
 
 datatype ProofStep = ProofStep(sub:Substitution, rule:Rule, facts:seq<Fact>)
 {
-  predicate valid() {
+  ghost predicate valid() {
     // Substitution has a mapping for each variable in the head
     rule.head.substitution_concrete(sub) &&
     (forall clause :: clause in rule.body ==> 
@@ -60,7 +60,7 @@ datatype ProofStep = ProofStep(sub:Substitution, rule:Rule, facts:seq<Fact>)
   }
 
   // The new fact we can conclude by applying this rule
-  function new_fact() : Fact
+  ghost function new_fact() : Fact
     requires valid() 
   {
     rule.head.make_fact(sub)
@@ -94,7 +94,7 @@ search_clause(query).subst applied to query
 type Proof = seq<ProofStep> 
 
 // predicate valid_proof(prog:Program, query:Clause, proof:Proof)
-predicate valid_proof(prog:Program, query:Fact, proof:Proof)
+ghost predicate valid_proof(prog:Program, query:Fact, proof:Proof)
 {
   && |proof| > 0
   // We start with an empty set of facts
@@ -110,19 +110,19 @@ predicate valid_proof(prog:Program, query:Fact, proof:Proof)
   //&& Last(proof).rule.head == query
 }
 
-predicate valid_query(prog:Program, query:Clause)
+ghost predicate valid_query(prog:Program, query:Clause)
 {
   //exists proof :: valid_proof(prog, query, proof)
   exists proof, subst :: query.substitution_concrete(subst) && valid_proof(prog, query.make_fact(subst), proof)
 }
 
 
-predicate match_exists(t:Term, clauses:seq<Clause>) 
+ghost predicate match_exists(t:Term, clauses:seq<Clause>) 
 {
   exists i, j :: 0 <= i < |clauses| && 0 <= j < |clauses[i].terms| && clauses[i].terms[j] == t
 }
 
-predicate rule_is_range_restricted(r:Rule)
+ghost predicate rule_is_range_restricted(r:Rule)
 {
   if |r.body| == 0 then true
   else
@@ -131,11 +131,11 @@ predicate rule_is_range_restricted(r:Rule)
 }
 
 // Check that a clause does not have duplicate terms
-predicate valid_clause(c:Clause) {
+ghost predicate valid_clause(c:Clause) {
   forall i:nat, j:nat | i < |c.terms| && j < |c.terms| :: i != j ==> c.terms[i] != c.terms[j]
 }
 
-predicate valid_rule(r:Rule) {
+ghost predicate valid_rule(r:Rule) {
   && (|r.body| == 0 ==> r.head.is_ground())
   && rule_is_range_restricted(r)
   // TODO: The below two conditions are temporary relaxations
@@ -143,7 +143,7 @@ predicate valid_rule(r:Rule) {
   && forall b :: b in r.body ==> valid_clause(b)
 }
 
-predicate valid_program(p:Program) {
+ghost predicate valid_program(p:Program) {
   forall i :: 0 <= i < |p| ==> valid_rule(p[i])
 }
 
