@@ -211,11 +211,11 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
         return false, None;
     }
     var current_emap:EvarMap := new EvarMap.Init(emap);
+    label AA:
     // find all rules that match current goal
     var matching_rules := find_matching_rules(rules, goal);
     assert(forall r :: r in matching_rules ==> valid_clause(r.head) && (forall c :: c in r.body ==> valid_clause(c)));
     // for all rules that match the current goal
-    label AA: 
     for i := 0 to |matching_rules|
         invariant emap.inv()
         invariant current_emap.inv()
@@ -296,9 +296,9 @@ method search (rules:seq<Rule>, goal:SearchClause, emap:EvarMap, depth: nat) ret
                 invariant flag ==> (|proofs| == j)
                 invariant flag ==> (forall ii :: 0 <= ii < j ==> search_clauses[ii].clause == rule.body[ii])
                 invariant forall c :: c in search_clauses ==> forall e :: c.subst.in2(e) ==> e in emap.evar_map
-                // invariant flag ==> (forall ii :: 0 <= ii < j ==> search_clauses[ii].clause.substitution_concrete(make_subst(emap, search_clauses[ii].subst))) // <------- EXPENSIVE?
-                // invariant flag ==> (forall ii :: 0 <= ii < j ==> valid_proof(rules, search_clauses[ii].clause.make_fact(make_subst(emap, search_clauses[ii].subst)), proofs[ii]))
-                // invariant flag ==> forall k :: 0 <= k < j ==> search_clauses[k].clause.make_fact(make_subst(emap, search_clauses[k].subst)) == Last(proofs[k]).new_fact();
+                invariant flag ==> (forall ii :: 0 <= ii < j ==> search_clauses[ii].clause.substitution_concrete(make_subst(emap, search_clauses[ii].subst))) // <------- EXPENSIVE?
+                invariant flag ==> (forall ii :: 0 <= ii < j ==> valid_proof(rules, search_clauses[ii].clause.make_fact(make_subst(emap, search_clauses[ii].subst)), proofs[ii]))
+                invariant flag ==> forall k :: 0 <= k < j ==> search_clauses[k].clause.make_fact(make_subst(emap, search_clauses[k].subst)) == Last(proofs[k]).new_fact();
                 invariant valid_rule(rule)
                 // // invariant goal.emap_fully_resolved(emap) // not true as an invariant
             {
