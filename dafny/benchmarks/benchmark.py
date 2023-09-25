@@ -1,10 +1,12 @@
 import argparse
 import random
 import sys
+import csv
 import os.path
 import tempfile
 import subprocess
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Tuple
@@ -50,6 +52,22 @@ def write_graph_facts(g, out=sys.stdout):
         print(f'edge("{edge[0]}", "{edge[1]}").', file=out)
 
 
+@dataclass
+class Result:
+    process: subprocess.CompletedProcess
+    elapsed_ns: int
+
+
+def benchmark_subprocess(args, **kwargs):
+    start = time.perf_counter_ns()
+    process = subprocess.run(args, check=True, capture_output=True, **kwargs)
+    end = time.perf_counter_ns()
+    return Result(
+        process=process,
+        elapsed_ns=end-start,
+    )
+
+
 class Solver(ABC):
     @abstractmethod
     def name(self):
@@ -77,7 +95,12 @@ class DafnySolver(Solver):
             # Invoke the solver.
             project = os.path.join(self._path, "datalog/datalog.csproj")
             args = ["dotnet", "run", "--project", project, temp.name]
-            result = subprocess.run(args, check=True, capture_output=True)
+            result =  benchmark_subprocess(args)
+
+            # TODO: validate process output
+            assert result.process.returncode == 0
+
+            return result
 
     @staticmethod
     def _write_datalog(g, out):
@@ -107,7 +130,12 @@ class SouffleSolver(Solver):
 
             # Invoke the solver.
             args = ["souffle", temp.name]
-            result = subprocess.run(args, check=True, capture_output=True)
+            result = benchmark_subprocess(args)
+
+            # TODO: validate process output
+            assert result.process.returncode == 0
+
+            return result
 
     @staticmethod
     def _write_program(g, out):
@@ -135,8 +163,11 @@ def main(args):
     parser = argparse.ArgumentParser(
                         prog='benchmark',
                         description='Benchmark datalog solvers.')
-    parser.add_argument('--nodes', default=10, type=int, help="Number of nodes in the graph.")
     parser.add_argument('--root', default="../..", help="Path to veri-datalog repository root.")
+    parser.add_argument('--results', default=sys.stdout, type=argparse.FileType('w'), help="Path to results CSV.")
+    parser.add_argument('--nodes-min', default=3, type=int, help="Starting value for number of nodes.")
+    parser.add_argument('--nodes-max', default=1000, type=int, help="Ending value for number of nodes.")
+    parser.add_argument('--nodes-scale', default=1.23, type=float, help="Scale problem size by this factor.")
 
     opts = parser.parse_args(args)
 
@@ -149,14 +180,29 @@ def main(args):
     for solver in solvers:
         logging.debug("configured solver: %s", solver.name())
 
-    # Generate.
-    g = random_connected_graph(opts.nodes)
-    logging.info("generated graph problem with %d nodes", len(g.nodes))
+    # TODO: "warmup" run (for example, in case dafny solvers not built)
 
-    # Solve.
-    for solver in solvers:
-        logging.info("execute solver: %s", solver.name())
-        solver.solve(g)
+    # Iterate over problem sizes.
+    nodes = opts.nodes_min
+    while nodes <= opts.nodes_max:
+        # Generate problem.
+        g = random_connected_graph(nodes)
+        logging.info("generated graph problem with %d nodes", len(g.nodes))
+
+        # Solve.
+        w = csv.writer(opts.results)
+        for solver in solvers:
+            # Exec.
+            logging.info("execute solver: %s", solver.name())
+            result = solver.solve(g)
+
+            # Record results.
+            problem_size = len(g.nodes)
+            w.writerow([solver.name(), problem_size, result.elapsed_ns])
+            opts.results.flush()
+
+        # Iterate.
+        nodes = max(int(nodes * opts.nodes_scale), nodes+1)
 
 
 if __name__ == "__main__":
