@@ -92,6 +92,42 @@ class DafnySolver(Solver):
         print(f'query(W) :- connected("{g.nodes[0]}", W).', file=out)
 
 
+class SouffleSolver(Solver):
+    def __init__(self, name="souffle"):
+        self._name = name
+
+    def name(self):
+        return self._name
+
+    def solve(self, g):
+        with tempfile.NamedTemporaryFile(mode='w') as temp:
+            # Write the problem.
+            with temp.file as f:
+                self._write_program(g, out=f)
+
+            # Invoke the solver.
+            args = ["souffle", temp.name]
+            result = subprocess.run(args, check=True, capture_output=True)
+
+    @staticmethod
+    def _write_program(g, out):
+        print('.decl node( a:symbol )', file=out)
+        print('.decl edge( a:symbol, b:symbol )', file=out)
+
+        # Facts.
+        write_graph_facts(g, out=out)
+
+        # Rules.
+        print('.decl connected( a:symbol, b:symbol )', file=out)
+        print('connected(A, A) :- node(A).', file=out)
+        print('connected(A, B) :- connected(A, M), edge(M, B).', file=out)
+
+        # Query.
+        print('.decl query( a:symbol )', file=out)
+        print('.printsize query', file=out)
+        print(f'query(W) :- connected("{g.nodes[0]}", W).', file=out)
+
+
 def main(args):
     logging.basicConfig(level=logging.INFO)
 
@@ -108,14 +144,18 @@ def main(args):
     solvers = [
         DafnySolver("bottom-up", os.path.join(opts.root, "dafny", "bottom-up")),
         DafnySolver("top-down", os.path.join(opts.root, "dafny", "top-down")),
+        SouffleSolver(),
     ]
+    for solver in solvers:
+        logging.debug("configured solver: %s", solver.name())
 
     # Generate.
     g = random_connected_graph(opts.nodes)
+    logging.info("generated graph problem with %d nodes", len(g.nodes))
 
     # Solve.
     for solver in solvers:
-        logging.info("execute solver %s", solver.name())
+        logging.info("execute solver: %s", solver.name())
         solver.solve(g)
 
 
