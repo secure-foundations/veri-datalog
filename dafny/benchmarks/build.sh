@@ -11,5 +11,5 @@ set -euxo pipefail
 # Top down.
 (
     cd ../top-down
-    make clean test-no-verify
+    make clean test
 )

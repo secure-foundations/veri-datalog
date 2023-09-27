@@ -26,17 +26,17 @@ type VarTerm = t:Term | t.Var? witness Var("")
 type Substitution = map<Term,Term>
 datatype Clause = Clause(name:string, terms:seq<Term>)
 {
-  predicate is_ground() 
+  predicate is_ground()
   {
     forall t :: t in terms ==> t.Const?
   }
 
-  predicate substitution_complete(sub:Substitution) 
+  predicate substitution_complete(sub:Substitution)
   {
     forall t :: t in terms && t.Var? ==> t in sub
   }
 
-  predicate substitution_concrete(sub:Substitution) 
+  predicate substitution_concrete(sub:Substitution)
   {
     substitution_complete(sub) && forall t :: t in terms && t.Var? ==> sub[t].Const?
   }
@@ -44,9 +44,9 @@ datatype Clause = Clause(name:string, terms:seq<Term>)
   function make_fact(sub:Substitution) : Fact
     requires substitution_concrete(sub)
   {
-    var new_terms := 
-      seq(|terms|, 
-          i requires 0 <= i < |terms| => 
+    var new_terms :=
+      seq(|terms|,
+          i requires 0 <= i < |terms| =>
             var t := terms[i];
             match t
               case Const(c) => t
@@ -55,7 +55,7 @@ datatype Clause = Clause(name:string, terms:seq<Term>)
   }
 }
 type Fact = c:Clause | c.is_ground() witness Clause("", [])
-datatype Rule = Rule(head:Clause, body:seq<Clause>) 
+datatype Rule = Rule(head:Clause, body:seq<Clause>)
 type Program = seq<Rule>
 
 
@@ -64,7 +64,7 @@ datatype ProofStep = ProofStep(sub:Substitution, rule:Rule, facts:seq<Fact>)
   predicate valid() {
     // Substitution has a mapping for each variable in the head
     rule.head.substitution_concrete(sub) &&
-    (forall clause :: clause in rule.body ==> 
+    (forall clause :: clause in rule.body ==>
      // Substitution has a mapping for each variable in the clause
      && clause.substitution_concrete(sub)
      // We can satisfy this clause with an existing fact
@@ -73,20 +73,20 @@ datatype ProofStep = ProofStep(sub:Substitution, rule:Rule, facts:seq<Fact>)
 
   // The new fact we can conclude by applying this rule
   function new_fact() : Fact
-    requires valid() 
+    requires valid()
   {
     rule.head.make_fact(sub)
   }
 }
 
-type Proof = seq<ProofStep> 
+type Proof = seq<ProofStep>
 
 predicate valid_proof(prog:Program, query:Rule, proof:Proof)
 {
   && |proof| > 0
   // We start with an empty set of facts
   && First(proof).facts == []
-  // Each proof step is valid 
+  // Each proof step is valid
   && (forall i :: 0 <= i < |proof| ==> proof[i].valid())
   // Each proof step except the last uses a rule from the program
   && (forall i :: 0 <= i < |proof| - 1 ==> proof[i].rule in prog)
@@ -107,9 +107,9 @@ predicate valid_query(prog:Program, query:Rule)
 
 method substitute(c:Clause, sub:Substitution) returns (c':Clause)
 {
-  var new_terms := 
-    seq(|c.terms|, 
-        i requires 0 <= i < |c.terms| => 
+  var new_terms :=
+    seq(|c.terms|,
+        i requires 0 <= i < |c.terms| =>
           var t := c.terms[i];
           match t
             case Const(_) => t
@@ -138,8 +138,8 @@ method unify(head:Clause, target:Clause) returns (s:Option<Substitution>)
 {
   if head.name != target.name || |head.terms| != |target.terms| {
     return None;
-  } else { 
-    s := unify_terms(head.terms, target.terms);   
+  } else {
+    s := unify_terms(head.terms, target.terms);
   }
 }
 
@@ -167,7 +167,7 @@ lemma unique_prefix(i1:int, i2:int, s:string)
     var found := false;
     var found_index := 0;
 
-    for i := 0 to |s1| 
+    for i := 0 to |s1|
       invariant forall j :: 0 <= j < i && !found ==> s1[j] == s2[j]
       invariant found ==> found_index < |s1| && s1[found_index] != s2[found_index]
     {
@@ -176,7 +176,7 @@ lemma unique_prefix(i1:int, i2:int, s:string)
         found_index := i;
       }
     }
-    
+
     if !found {
       assert false;
     } else {
@@ -197,14 +197,14 @@ class UniqueNamer {
   ghost var old_names: set<string>;
   ghost var new_names: set<string>;
 
-  predicate {:opaque} valid() 
+  predicate {:opaque} valid()
     reads this
   {
     (forall name :: name in old_names ==> counter_prefix(name, counter)) &&
     (forall name :: name in new_names ==> (int_to_string(counter) + ":") <= name)
   }
 
-  constructor() 
+  constructor()
     ensures valid()
   {
     counter := 0;
@@ -214,7 +214,7 @@ class UniqueNamer {
     reveal valid();
   }
 
-  method inc() 
+  method inc()
     requires valid()
     modifies this
     ensures valid()
@@ -236,7 +236,7 @@ class UniqueNamer {
   {
     reveal valid();
     s' := (int_to_string(counter) + ":") + s;
-    new_names := new_names + {s'}; 
+    new_names := new_names + {s'};
     if s' in old_names {
       assert counter_prefix(s', counter);
       ghost var i :| i < counter && (int_to_string(i) + ":") <= s';
@@ -256,7 +256,7 @@ function clause_names(c:Clause) : set<string>
   terms_names(c.terms)
 }
 
-function rule_names(r:Rule) : set<string> 
+function rule_names(r:Rule) : set<string>
 {
   clause_names(r.head) + clauses_names(r.body)
 }
@@ -273,10 +273,10 @@ function clauses_names(cs:seq<Clause>) : (strings:set<string>)
 }
 
 lemma terms_name_extension(terms:seq<Term>, t:Term)
-  ensures terms_names(terms + [t]) == terms_names(terms) + if t.Var? then {t.s} else {}
+  ensures terms_names(terms + [t]) == terms_names(terms) + if t.Var? then {t.s} else {} {}
 
 lemma clauses_name_extension(clauses:seq<Clause>, c:Clause)
-  ensures clauses_names(clauses + [c]) == clauses_names(clauses) + clause_names(c)
+  ensures clauses_names(clauses + [c]) == clauses_names(clauses) + clause_names(c) {}
 
 method make_vars_unique_clause(c:Clause, namer:UniqueNamer) returns (c':Clause)
   requires namer.valid()
@@ -287,7 +287,7 @@ method make_vars_unique_clause(c:Clause, namer:UniqueNamer) returns (c':Clause)
   ensures clause_names(c') !! namer.old_names
 {
   var new_terms := [];
-  for i := 0 to |c.terms| 
+  for i := 0 to |c.terms|
     invariant namer.valid()
     invariant old(namer.new_names) <= namer.new_names
     invariant terms_names(new_terms) <= namer.new_names
@@ -297,7 +297,7 @@ method make_vars_unique_clause(c:Clause, namer:UniqueNamer) returns (c':Clause)
     var t';
     match t {
       case Const(_) => t' := t;
-      case Var(v) => 
+      case Var(v) =>
         var new_name := namer.mk_unique(v);
         t' := Var(new_name);
     }
@@ -313,15 +313,15 @@ method make_vars_unique(r:Rule, namer:UniqueNamer) returns (r': Rule)
   ensures namer.valid()
   ensures rule_names(r') <= namer.new_names
   ensures rule_names(r') !! old(namer.old_names)
-  ensures namer.old_names == old(namer.old_names) 
+  ensures namer.old_names == old(namer.old_names)
   ensures |r.body| == |r'.body|
   ensures namer.new_names >= old(namer.new_names)
 {
 //  namer.inc();
   var head := make_vars_unique_clause(r.head, namer);
   var body := [];
-  for i := 0 to |r.body| 
-    invariant namer.valid()    
+  for i := 0 to |r.body|
+    invariant namer.valid()
     invariant rule_names(Rule(head, body)) <= namer.new_names
     invariant rule_names(Rule(head, body)) !! namer.old_names
     invariant namer.old_names == old(namer.old_names)
@@ -335,14 +335,14 @@ method make_vars_unique(r:Rule, namer:UniqueNamer) returns (r': Rule)
   r' := Rule(head, body);
 }
 
-method find_matching_rules(c:Clause, prog:Program, namer:UniqueNamer) returns (matches: seq<(Rule, Substitution)>) 
+method find_matching_rules(c:Clause, prog:Program, namer:UniqueNamer) returns (matches: seq<(Rule, Substitution)>)
   requires namer.valid()
   modifies namer
   ensures namer.valid()
 {
   matches := [];
   // Find rules that might apply
-  for j := 0 to |prog| 
+  for j := 0 to |prog|
     invariant namer.valid()
     invariant forall i :: 0 <= i < |matches| ==> var (r, s) := matches[i]; rule_names(r) <= namer.new_names
   {
@@ -350,7 +350,7 @@ method find_matching_rules(c:Clause, prog:Program, namer:UniqueNamer) returns (m
     var rule' := make_vars_unique(rule, namer);
     var uresult := unify(rule'.head, c);
     match uresult {
-      case None => 
+      case None =>
       case Some(sub) => matches := matches + [(rule', sub)];
     }
   }
@@ -359,20 +359,20 @@ method find_matching_rules(c:Clause, prog:Program, namer:UniqueNamer) returns (m
 function method apply_sub_clause(sub:Substitution, c:Clause) : (c':Clause)
   ensures clause_names(c') <= clause_names(c)
 {
-  var new_terms := 
-    seq(|c.terms|, 
-        i requires 0 <= i < |c.terms| => 
+  var new_terms :=
+    seq(|c.terms|,
+        i requires 0 <= i < |c.terms| =>
           var t := c.terms[i];
           if t in sub then sub[t] else t);
   Clause(c.name, new_terms)
 }
-            
+
 method apply_sub_clauses(sub:Substitution, clauses:seq<Clause>) returns (s:seq<Clause>)
 {
-  s := seq(|clauses|, 
-           i requires 0 <= i < |clauses| => 
+  s := seq(|clauses|,
+           i requires 0 <= i < |clauses| =>
             var c := clauses[i];
-            apply_sub_clause(sub, c));          
+            apply_sub_clause(sub, c));
 }
 
 datatype TermPattern = VarPat | ConstPat(c:string)
@@ -388,8 +388,8 @@ function method mk_term_pattern(t:Term) : TermPattern
 function method mk_clause_pattern(c:Clause) : ClausePattern
 {
   var patterns :=
-    seq(|c.terms|, 
-        i requires 0 <= i < |c.terms| => 
+    seq(|c.terms|,
+        i requires 0 <= i < |c.terms| =>
           var t := c.terms[i];
           mk_term_pattern(t));
   ClausePattern(c.name, patterns)
@@ -413,7 +413,7 @@ datatype SldNode = SldNode(path: set<ClausePattern>, clauses:seq<Clause>)
     clauses[1..]
   }
 
-  predicate clause_names_contained(s:set<string>) 
+  predicate clause_names_contained(s:set<string>)
   {
     clauses_names(clauses) <= s
   }
@@ -428,7 +428,7 @@ method query(prog:Program, query:Rule) returns (b:bool)
   var stack: seq<SldNode> := [SldNode({mk_clause_pattern(uniquified_query.head)}, uniquified_query.body)];
   //var goals := {};
   var bound := 0x1_0000_0000;
-  while |stack| > 0 && bound > 0 
+  while |stack| > 0 && bound > 0
     invariant namer.valid()
     decreases bound
     invariant forall i :: 0 <= i < |stack| ==> stack[i].valid()
@@ -437,7 +437,7 @@ method query(prog:Program, query:Rule) returns (b:bool)
     var node := stack[0];
     //print "Processing node: ", node, "\n";
     stack := stack[1..];
-    
+
     // Process the first clause first (TODO: Choose more strategically)
     var clause := node.head();
     var clause_pat := mk_clause_pattern(clause);
@@ -452,19 +452,19 @@ method query(prog:Program, query:Rule) returns (b:bool)
         // Signal failure by ceasing to process this clause set?
       } else {
         var new_nodes:seq<SldNode> := [];
-        for i := 0 to |matches| 
+        for i := 0 to |matches|
           invariant forall i :: 0 <= i < |new_nodes| ==> new_nodes[i].valid()
           invariant forall i :: 0 <= i < |new_nodes| ==> new_nodes[i].clause_names_contained(namer.new_names)
           invariant namer.valid()
         {
-          var (rule, sub) := matches[i];        
+          var (rule, sub) := matches[i];
           var rule_body := apply_sub_clauses(sub, rule.body);
           var remaining_clauses := apply_sub_clauses(sub, node.rest());
           var new_clauses := rule_body + remaining_clauses;
           if |new_clauses| == 0 {
             // We've resolved everything down to basic facts!
             return true;
-          }          
+          }
           var new_path := node.path + { clause_pat };
           var new_node := SldNode(new_path, new_clauses);
           new_nodes := [new_node] + new_nodes;
@@ -494,7 +494,7 @@ method run(raw_prog:Program)
   var valid_query := check_rule(q);
   //if valid_prog && valid_query {
   if valid_query {
-    var b := query(prog, q);  
+    var b := query(prog, q);
     print "Query returned ", b, "\n";
   } else {
     print "Sorry, that's an invalid program and/or query\n";
