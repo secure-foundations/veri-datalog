@@ -42,6 +42,22 @@ def random_connected_graph(n):
     return g
 
 
+@dataclass
+class ConnectivityProblem:
+    graph: Graph
+    src: str
+    dst: str
+
+
+def random_connectivity_problem(n):
+    g = random_connected_graph(n)
+    return ConnectivityProblem(
+        graph=g,
+        src=g.nodes[0],
+        dst=g.nodes[-1]
+    )
+
+
 def write_graph_facts(g, out=sys.stdout):
     # Nodes.
     for node in g.nodes:
@@ -59,9 +75,14 @@ class Result:
 
 
 def benchmark_subprocess(args, **kwargs):
+    logging.debug(args)
+
     start = time.perf_counter_ns()
     process = subprocess.run(args, check=True, capture_output=True, **kwargs)
     end = time.perf_counter_ns()
+
+    logging.debug(process.stdout)
+
     return Result(
         process=process,
         elapsed_ns=end-start,
@@ -79,40 +100,41 @@ class Solver(ABC):
 
 
 class DafnySolver(Solver):
-    def __init__(self, name, path):
+    def __init__(self, name, path, match_output):
         self._name = name
         self._path = path
+        self._match_output = match_output
 
     def name(self):
         return self._name
 
-    def solve(self, g):
-        with tempfile.NamedTemporaryFile(mode='w') as temp:
+    def solve(self, p):
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp:
             # Write the problem.
             with temp.file as f:
-                self._write_datalog(g, out=f)
+                self._write_datalog(p, out=f)
 
             # Invoke the solver.
             project = os.path.join(self._path, "datalog/datalog.csproj")
             args = ["dotnet", "run", "--project", project, temp.name]
             result =  benchmark_subprocess(args)
 
-            # TODO: validate process output
             assert result.process.returncode == 0
+            assert self._match_output in result.process.stdout
 
             return result
 
     @staticmethod
-    def _write_datalog(g, out):
+    def _write_datalog(p, out):
         # Facts.
-        write_graph_facts(g, out=out)
+        write_graph_facts(p.graph, out=out)
 
         # Rules.
         print('connected(A, B) :- edge(A, B).', file=out)
         print('connected(A, B) :- connected(A, M), edge(M, B).', file=out)
 
         # Query.
-        print(f'query(W) :- connected("{g.nodes[0]}", W).', file=out)
+        print(f'query(W) :- connected("{p.src}", "{p.dst}"), connected("{p.src}", W).', file=out)
 
 
 class SouffleSolver(Solver):
@@ -122,11 +144,11 @@ class SouffleSolver(Solver):
     def name(self):
         return self._name
 
-    def solve(self, g):
-        with tempfile.NamedTemporaryFile(mode='w') as temp:
+    def solve(self, p):
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp:
             # Write the problem.
             with temp.file as f:
-                self._write_program(g, out=f)
+                self._write_program(p, out=f)
 
             # Invoke the solver.
             args = ["souffle", temp.name]
@@ -138,12 +160,12 @@ class SouffleSolver(Solver):
             return result
 
     @staticmethod
-    def _write_program(g, out):
+    def _write_program(p, out):
         print('.decl node( a:symbol )', file=out)
         print('.decl edge( a:symbol, b:symbol )', file=out)
 
         # Facts.
-        write_graph_facts(g, out=out)
+        write_graph_facts(p.graph, out=out)
 
         # Rules.
         print('.decl connected( a:symbol, b:symbol )', file=out)
@@ -153,11 +175,11 @@ class SouffleSolver(Solver):
         # Query.
         print('.decl query( a:symbol )', file=out)
         print('.printsize query', file=out)
-        print(f'query(W) :- connected("{g.nodes[0]}", W).', file=out)
+        print(f'query("OK") :- connected("{p.src}", "{p.dst}").', file=out)
 
 
 def main(args):
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
 
     # Options.
     parser = argparse.ArgumentParser(
@@ -173,8 +195,16 @@ def main(args):
 
     # Solvers.
     solvers = [
-        DafnySolver("bottom-up", os.path.join(opts.root, "dafny", "bottom-up")),
-        DafnySolver("top-down", os.path.join(opts.root, "dafny", "top-down")),
+        DafnySolver(
+            "bottom-up",
+            os.path.join(opts.root, "dafny", "bottom-up"),
+            b"Query succeeded!"
+        ),
+        DafnySolver(
+            "top-down",
+            os.path.join(opts.root, "dafny", "top-down"),
+            b"Query returned true"
+        ),
         SouffleSolver(),
     ]
     for solver in solvers:
@@ -186,18 +216,18 @@ def main(args):
     nodes = opts.nodes_min
     while nodes <= opts.nodes_max:
         # Generate problem.
-        g = random_connected_graph(nodes)
-        logging.info("generated graph problem with %d nodes", len(g.nodes))
+        p = random_connectivity_problem(nodes)
+        problem_size = len(p.graph.nodes)
+        logging.info("generated graph problem with %d nodes", problem_size)
 
         # Solve.
         w = csv.writer(opts.results)
         for solver in solvers:
             # Exec.
             logging.info("execute solver: %s", solver.name())
-            result = solver.solve(g)
+            result = solver.solve(p)
 
             # Record results.
-            problem_size = len(g.nodes)
             w.writerow([solver.name(), problem_size, result.elapsed_ns])
             opts.results.flush()
 
