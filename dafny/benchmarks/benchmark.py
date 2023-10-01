@@ -96,6 +96,8 @@ def benchmark_subprocess(args, **kwargs):
 
 
 class Solver(ABC):
+    QUERY_NAME = 'query'
+
     @abstractmethod
     def name(self):
         raise NotImplementedError()
@@ -130,8 +132,8 @@ class DafnySolver(Solver):
 
             return result
 
-    @staticmethod
-    def _write_datalog(p, out):
+    @classmethod
+    def _write_datalog(cls, p, out):
         # Facts.
         write_connectivity_problem_facts(p, out=out)
 
@@ -140,12 +142,13 @@ class DafnySolver(Solver):
         print('connected(A, B) :- edge(A, M), connected(M, B).', file=out)
 
         # Query.
-        print(f'query(S, D) :- source(S), destination(D), connected(S, D).', file=out)
+        print(f'{cls.QUERY_NAME}(S, D) :- source(S), destination(D), connected(S, D).', file=out)
 
 
 class SouffleSolver(Solver):
-    def __init__(self, name="souffle"):
+    def __init__(self, name="souffle", expect_size=1):
         self._name = name
+        self._expect_size = expect_size
 
     def name(self):
         return self._name
@@ -160,13 +163,13 @@ class SouffleSolver(Solver):
             args = ["souffle", temp.name]
             result = benchmark_subprocess(args)
 
-            # TODO: validate process output
             assert result.process.returncode == 0
+            assert result.process.stdout.decode() == f"{self.QUERY_NAME}\t{self._expect_size}\n"
 
             return result
 
-    @staticmethod
-    def _write_program(p, out):
+    @classmethod
+    def _write_program(cls, p, out):
         print('.decl node( a:symbol )', file=out)
         print('.decl edge( a:symbol, b:symbol )', file=out)
         print('.decl source( a:symbol )', file=out)
@@ -181,9 +184,9 @@ class SouffleSolver(Solver):
         print('connected(A, B) :- edge(A, M), connected(M, B).', file=out)
 
         # Query.
-        print('.decl query( a:symbol, b:symbol )', file=out)
-        print('.printsize query', file=out)
-        print(f'query(S, D) :- source(S), destination(D), connected(S, D).', file=out)
+        print(f'.decl {cls.QUERY_NAME}( a:symbol, b:symbol )', file=out)
+        print(f'.printsize {cls.QUERY_NAME}', file=out)
+        print(f'{cls.QUERY_NAME}(S, D) :- source(S), destination(D), connected(S, D).', file=out)
 
 
 def main(args):
