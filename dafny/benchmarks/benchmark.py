@@ -202,6 +202,7 @@ def main(args):
     parser.add_argument('--nodes-min', default=3, type=int, help="Starting value for number of nodes.")
     parser.add_argument('--nodes-max', default=1000, type=int, help="Ending value for number of nodes.")
     parser.add_argument('--nodes-scale', default=1.23, type=float, help="Scale problem size by this factor.")
+    parser.add_argument('--benchmarks-per-size', default=1, type=int, help="Number of problems per size.")
     parser.add_argument('--log-level', default='info', type=str, help="Logging level.")
     parser.add_argument('--verbose', action='store_const', dest='log_level', const='debug', help="Verbose logging.")
 
@@ -231,23 +232,24 @@ def main(args):
     # Iterate over problem sizes.
     nodes = opts.nodes_min
     while nodes <= opts.nodes_max:
-        # Generate problem.
-        p = random_connectivity_problem(nodes)
-        problem_size = len(p.graph.nodes)
-        logging.info("generated graph problem with %d nodes", problem_size)
+        for _ in range(opts.benchmarks_per_size):
+            # Generate problem.
+            p = random_connectivity_problem(nodes)
+            problem_size = len(p.graph.nodes)
+            logging.info("generated graph problem with %d nodes", problem_size)
 
-        # Solve.
-        w = csv.writer(opts.results)
-        for solver in solvers:
-            # Exec.
-            logging.info("execute solver: %s", solver.name())
-            result = solver.solve(p)
+            # Solve.
+            w = csv.writer(opts.results)
+            for solver in solvers:
+                # Exec.
+                logging.info("execute solver: %s", solver.name())
+                result = solver.solve(p)
 
-            # Record results.
-            w.writerow([solver.name(), problem_size, result.elapsed_ns])
-            opts.results.flush()
+                # Record results.
+                w.writerow([solver.name(), problem_size, result.elapsed_ns])
+                opts.results.flush()
 
-        # Iterate.
+        # Advance to next node size.
         nodes = max(int(nodes * opts.nodes_scale), nodes+1)
 
 
