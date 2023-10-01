@@ -187,8 +187,6 @@ class SouffleSolver(Solver):
 
 
 def main(args):
-    logging.basicConfig(level=logging.DEBUG)
-
     # Options.
     parser = argparse.ArgumentParser(
                         prog='benchmark',
@@ -198,8 +196,12 @@ def main(args):
     parser.add_argument('--nodes-min', default=3, type=int, help="Starting value for number of nodes.")
     parser.add_argument('--nodes-max', default=1000, type=int, help="Ending value for number of nodes.")
     parser.add_argument('--nodes-scale', default=1.23, type=float, help="Scale problem size by this factor.")
+    parser.add_argument('--log-level', default='info', type=str, help="Logging level.")
+    parser.add_argument('--verbose', action='store_const', dest='log_level', const='debug', help="Verbose logging.")
 
     opts = parser.parse_args(args)
+    logging.basicConfig(level=opts.log_level.upper())
+    logging.debug('options: %s', opts)
 
     # Solvers.
     solvers = [
