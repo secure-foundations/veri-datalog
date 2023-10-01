@@ -91,7 +91,6 @@ def benchmark_subprocess(args, **kwargs):
     end = time.perf_counter_ns()
 
     logging.debug(process.stdout)
-
     return Result(
         process=process,
         elapsed_ns=end-start,
@@ -106,7 +105,7 @@ class Solver(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def solve(self, g):
+    def solve(self, p, timeout=None, debug=False):
         raise NotImplementedError()
 
 
@@ -119,8 +118,8 @@ class DafnySolver(Solver):
     def name(self):
         return self._name
 
-    def solve(self, p):
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp:
+    def solve(self, p, timeout=None, debug=False):
+        with tempfile.NamedTemporaryFile(mode='w', delete=not debug) as temp:
             # Write the problem.
             with temp.file as f:
                 self._write_datalog(p, out=f)
@@ -128,7 +127,7 @@ class DafnySolver(Solver):
             # Invoke the solver.
             project = os.path.join(self._path, "datalog/datalog.csproj")
             args = ["dotnet", "run", "--project", project, temp.name]
-            result =  benchmark_subprocess(args)
+            result =  benchmark_subprocess(args, timeout=timeout)
 
             assert result.process.returncode == 0
             assert self._match_output in result.process.stdout
@@ -156,15 +155,15 @@ class SouffleSolver(Solver):
     def name(self):
         return self._name
 
-    def solve(self, p):
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp:
+    def solve(self, p, timeout=None, debug=False):
+        with tempfile.NamedTemporaryFile(mode='w', delete=not debug) as temp:
             # Write the problem.
             with temp.file as f:
                 self._write_program(p, out=f)
 
             # Invoke the solver.
             args = ["souffle", temp.name]
-            result = benchmark_subprocess(args)
+            result = benchmark_subprocess(args, timeout=timeout)
 
             assert result.process.returncode == 0
             assert result.process.stdout.decode() == f"{self.QUERY_NAME}\t{self._expect_size}\n"
@@ -203,11 +202,17 @@ def main(args):
     parser.add_argument('--nodes-max', default=1000, type=int, help="Ending value for number of nodes.")
     parser.add_argument('--nodes-scale', default=1.23, type=float, help="Scale problem size by this factor.")
     parser.add_argument('--benchmarks-per-size', default=1, type=int, help="Number of problems per size.")
+    parser.add_argument('--timeout', default=60, type=int, help="Timeout in seconds.")
     parser.add_argument('--log-level', default='info', type=str, help="Logging level.")
     parser.add_argument('--verbose', action='store_const', dest='log_level', const='debug', help="Verbose logging.")
+    parser.add_argument('--debug', action='store_true', help="Debug mode.")
 
     opts = parser.parse_args(args)
-    logging.basicConfig(level=opts.log_level.upper())
+
+    # Logging.
+    log_level = 'debug' if opts.debug else opts.log_level
+    logging.basicConfig(level=log_level.upper())
+
     logging.debug('options: %s', opts)
 
     # Solvers.
@@ -243,7 +248,11 @@ def main(args):
             for solver in solvers:
                 # Exec.
                 logging.info("execute solver: %s", solver.name())
-                result = solver.solve(p)
+                try:
+                    result = solver.solve(p, debug=opts.debug, timeout=opts.timeout)
+                except subprocess.TimeoutExpired as error:
+                    logging.warning("solver timeout after %d seconds", error.timeout)
+                    continue
 
                 # Record results.
                 w.writerow([solver.name(), problem_size, result.elapsed_ns])
