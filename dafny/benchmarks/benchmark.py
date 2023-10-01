@@ -51,10 +51,12 @@ class ConnectivityProblem:
 
 def random_connectivity_problem(n):
     g = random_connected_graph(n)
+    assert n >= 2
+    src, dst = random.sample(g.nodes, 2)
     return ConnectivityProblem(
         graph=g,
-        src=g.nodes[0],
-        dst=g.nodes[-1]
+        src=src,
+        dst=dst
     )
 
 
@@ -63,9 +65,10 @@ def write_graph_facts(g, out=sys.stdout):
     for node in g.nodes:
         print(f'node("{node}").', file=out)
 
-    # Edges.
-    for edge in g.edges:
-        print(f'edge("{edge[0]}", "{edge[1]}").', file=out)
+    # Edges (bi-directional).
+    for a, b in g.edges:
+        print(f'edge("{a}", "{b}").', file=out)
+        print(f'edge("{b}", "{a}").', file=out)
 
 
 def write_connectivity_problem_facts(p, out=sys.stdout):
