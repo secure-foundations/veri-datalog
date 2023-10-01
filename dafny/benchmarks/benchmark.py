@@ -68,6 +68,12 @@ def write_graph_facts(g, out=sys.stdout):
         print(f'edge("{edge[0]}", "{edge[1]}").', file=out)
 
 
+def write_connectivity_problem_facts(p, out=sys.stdout):
+    write_graph_facts(p.graph, out=out)
+    print(f'source("{p.src}").', file=out)
+    print(f'destination("{p.dst}").', file=out)
+
+
 @dataclass
 class Result:
     process: subprocess.CompletedProcess
@@ -127,14 +133,14 @@ class DafnySolver(Solver):
     @staticmethod
     def _write_datalog(p, out):
         # Facts.
-        write_graph_facts(p.graph, out=out)
+        write_connectivity_problem_facts(p, out=out)
 
         # Rules.
         print('connected(A, B) :- edge(A, B).', file=out)
-        print('connected(A, B) :- connected(A, M), edge(M, B).', file=out)
+        print('connected(A, B) :- edge(A, M), connected(M, B).', file=out)
 
         # Query.
-        print(f'query(W) :- connected("{p.src}", "{p.dst}"), connected("{p.src}", W).', file=out)
+        print(f'query(S, D) :- source(S), destination(D), connected(S, D).', file=out)
 
 
 class SouffleSolver(Solver):
@@ -163,19 +169,21 @@ class SouffleSolver(Solver):
     def _write_program(p, out):
         print('.decl node( a:symbol )', file=out)
         print('.decl edge( a:symbol, b:symbol )', file=out)
+        print('.decl source( a:symbol )', file=out)
+        print('.decl destination( a:symbol )', file=out)
 
         # Facts.
-        write_graph_facts(p.graph, out=out)
+        write_connectivity_problem_facts(p, out=out)
 
         # Rules.
         print('.decl connected( a:symbol, b:symbol )', file=out)
-        print('connected(A, A) :- node(A).', file=out)
-        print('connected(A, B) :- connected(A, M), edge(M, B).', file=out)
+        print('connected(A, B) :- edge(A, B).', file=out)
+        print('connected(A, B) :- edge(A, M), connected(M, B).', file=out)
 
         # Query.
-        print('.decl query( a:symbol )', file=out)
+        print('.decl query( a:symbol, b:symbol )', file=out)
         print('.printsize query', file=out)
-        print(f'query("OK") :- connected("{p.src}", "{p.dst}").', file=out)
+        print(f'query(S, D) :- source(S), destination(D), connected(S, D).', file=out)
 
 
 def main(args):
