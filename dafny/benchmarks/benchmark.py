@@ -236,6 +236,7 @@ def main(args):
 
     # Iterate over problem sizes.
     nodes = opts.nodes_min
+    disabled = set()
     while nodes <= opts.nodes_max:
         for _ in range(opts.benchmarks_per_size):
             # Generate problem.
@@ -246,12 +247,17 @@ def main(args):
             # Solve.
             w = csv.writer(opts.results)
             for solver in solvers:
+                if solver.name() in disabled:
+                    logging.debug("skipping solver: %s", solver.name())
+                    continue
+
                 # Exec.
                 logging.info("execute solver: %s", solver.name())
                 try:
                     result = solver.solve(p, debug=opts.debug, timeout=opts.timeout)
                 except subprocess.TimeoutExpired as error:
-                    logging.warning("solver timeout after %d seconds", error.timeout)
+                    logging.warning("solver timeout after %d seconds: disabling", error.timeout)
+                    disabled.add(solver.name())
                     continue
 
                 # Record results.
