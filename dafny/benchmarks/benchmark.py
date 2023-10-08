@@ -191,6 +191,46 @@ class SouffleSolver(Solver):
         print(f'{cls.QUERY_NAME}(S, D) :- source(S), destination(D), connected(S, D).', file=out)
 
 
+class SWISolver(Solver):
+    GOAL = "go"
+
+    def __init__(self, name="swi"):
+        self._name = name
+
+    def name(self):
+        return self._name
+
+    def solve(self, p, timeout=None, debug=False):
+        with tempfile.NamedTemporaryFile(mode='w', delete=not debug) as temp:
+            # Write the problem.
+            with temp.file as f:
+                self._write_datalog(p, out=f)
+
+            # Invoke the solver.
+            args = ["swipl", "-l", temp.name, "-g", self.GOAL, "-g", "halt"]
+            result =  benchmark_subprocess(args, timeout=timeout)
+
+            assert result.process.returncode == 0
+            assert result.process.stdout.decode() == f"{p.src}{p.dst}\n"
+
+            return result
+
+    @classmethod
+    def _write_datalog(cls, p, out):
+        # Facts.
+        write_connectivity_problem_facts(p, out=out)
+
+        # Rules.
+        print('connected(A, B) :- edge(A, B).', file=out)
+        print('connected(A, B) :- edge(A, M), connected(M, B).', file=out)
+
+        # Query.
+        print(f'{cls.QUERY_NAME}(S, D) :- source(S), destination(D), connected(S, D).', file=out)
+
+        # Top-level.
+        print(f'{cls.GOAL} :- forall(once({cls.QUERY_NAME}(S, D)), (write(S), write(D), nl)).', file=out)
+
+
 def main(args):
     # Options.
     parser = argparse.ArgumentParser(
@@ -228,6 +268,7 @@ def main(args):
             b"Query returned true"
         ),
         SouffleSolver(),
+        # SWISolver(),
     ]
     for solver in solvers:
         logging.debug("configured solver: %s", solver.name())
