@@ -17,29 +17,15 @@ class Graph:
     nodes: List[str]
     edges: List[Tuple[str, str]]
 
+    @classmethod
+    def empty(cls):
+        return cls(nodes=[], edges=[])
 
-def random_connected_graph(n):
-    assert n > 0, ""
-
-    def node_name(i):
-        return f"n{i}"
-
-    # Start with a single-node graph.
-    g = Graph(nodes=[node_name(0)], edges=[])
-
-    # Iteratively add nodes, each connected to one already in the graph.
-    while len(g.nodes) < n:
-        # Generate a new node.
-        new_node = node_name(len(g.nodes))
-
-        # Pick a random current node to connect it to.
-        connected_node = random.choice(g.nodes)
-
-        # Update graph structure.
-        g.nodes.append(new_node)
-        g.edges.append((connected_node, new_node))
-
-    return g
+    def add_node(self):
+        index = len(self.nodes)
+        node = f"n{index}"
+        self.nodes.append(node)
+        return node
 
 
 @dataclass
@@ -49,10 +35,18 @@ class ConnectivityProblem:
     dst: str
 
 
-def random_connectivity_problem(n):
-    g = random_connected_graph(n)
-    assert n >= 2
-    src, dst = random.sample(g.nodes, 2)
+def single_path_connectivity_problem(n):
+    """
+    Generates a connectivity problem that's just traversing a single path graph
+    of length n from beginning to end.
+    """
+    g = Graph.empty()
+    src = g.add_node()
+    dst = src
+    for i in range(n):
+        last = dst
+        dst = g.add_node()
+        g.edges.append((last, dst))
     return ConnectivityProblem(
         graph=g,
         src=src,
@@ -60,15 +54,35 @@ def random_connectivity_problem(n):
     )
 
 
+def random_graph_growth(g, n):
+    for i in range(n):
+        # Pick a random current node as a source.
+        connected_node = random.choice(g.nodes)
+
+        # Generate a new node.
+        new_node = g.add_node()
+
+        # Update graph structure.
+        g.edges.append((connected_node, new_node))
+
+
+def random_connectivity_problem(n):
+    assert n > 0
+    m = n//2
+    p = single_path_connectivity_problem(m)
+    random_graph_growth(p.graph, n-m)
+    random.shuffle(p.graph.edges)
+    return p
+
+
 def write_graph_facts(g, out=sys.stdout):
     # Nodes.
     for node in g.nodes:
         print(f'node("{node}").', file=out)
 
-    # Edges (bi-directional).
+    # Edges (directional).
     for a, b in g.edges:
         print(f'edge("{a}", "{b}").', file=out)
-        print(f'edge("{b}", "{a}").', file=out)
 
 
 def write_connectivity_problem_facts(p, out=sys.stdout):
@@ -268,7 +282,7 @@ def main(args):
             b"Query returned true"
         ),
         SouffleSolver(),
-        # SWISolver(),
+        SWISolver(),
     ]
     for solver in solvers:
         logging.debug("configured solver: %s", solver.name())
