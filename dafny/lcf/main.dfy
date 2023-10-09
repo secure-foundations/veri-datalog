@@ -1,18 +1,22 @@
 type Subst = map<string, string>
 
-datatype Term = App(head : string, args : seq<string>) {
+datatype Term = App(head : string, args : seq<string>) | Const(val :string) {
     predicate complete_subst(s : Subst) {
-        forall i :: 0 <= i < |args| ==> args[i] in s
+        match this 
+            case Const(v) => true
+            case App(head, args) =>  forall i :: 0 <= i < |args| ==> args[i] in s
     }
     function subst(s : Subst) : Term
         requires complete_subst(s)
      { 
-        var args' :=
-            seq(|args|, i requires 0 <= i < |args| => s[args[i]]);
-        App(head, args')
+        match this
+            case Const(v) => this
+            case App(head, args) => 
+                var args' :=
+                    seq(|args|, i requires 0 <= i < |args| => s[args[i]]);
+                App(head, args')
     }
 
-    function fvs() : seq<string> { args }
 }
 
 datatype Rule = Rule(head : Term, body : seq<Term>) {
