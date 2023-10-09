@@ -161,13 +161,9 @@ class DafnySolver(Solver):
         print(f'{cls.QUERY_NAME}(S, D) :- source(S), destination(D), connected(S, D).', file=out)
 
 
-class SouffleSolver(Solver):
-    def __init__(self, name="souffle", expect_size=1):
-        self._name = name
+class SouffleSolverBase(Solver):
+    def __init__(self, expect_size=1):
         self._expect_size = expect_size
-
-    def name(self):
-        return self._name
 
     def solve(self, p, timeout=None, debug=False):
         with tempfile.NamedTemporaryFile(mode='w', delete=not debug) as temp:
@@ -176,13 +172,16 @@ class SouffleSolver(Solver):
                 self._write_program(p, out=f)
 
             # Invoke the solver.
-            args = ["souffle", temp.name]
-            result = benchmark_subprocess(args, timeout=timeout)
+            result = self._invoke(p, temp.name, timeout=timeout, debug=debug)
 
             assert result.process.returncode == 0
             assert result.process.stdout.decode() == f"{self.QUERY_NAME}\t{self._expect_size}\n"
 
             return result
+
+    @abstractmethod
+    def _invoke(self, p, filename, timeout=None, debug=False):
+        raise NotImplementedError()
 
     @classmethod
     def _write_program(cls, p, out):
@@ -203,6 +202,44 @@ class SouffleSolver(Solver):
         print(f'.decl {cls.QUERY_NAME}( a:symbol, b:symbol )', file=out)
         print(f'.printsize {cls.QUERY_NAME}', file=out)
         print(f'{cls.QUERY_NAME}(S, D) :- source(S), destination(D), connected(S, D).', file=out)
+
+
+class SouffleSolver(SouffleSolverBase):
+    def name(self):
+        return "souffle"
+
+    def _invoke(self, p, filename, timeout=None, debug=False):
+        args = ["souffle", filename]
+        return benchmark_subprocess(args, timeout=timeout)
+
+
+class SouffleSolverProvenance(SouffleSolverBase):
+    def name(self):
+        return "souffle-provenance"
+
+    def _invoke(self, p, filename, timeout=None, debug=False):
+        with tempfile.NamedTemporaryFile(mode='w', delete=not debug) as provenance:
+            # Build input to the interactive explain session.
+            proof_depth = 10*len(p.graph.nodes)
+
+            explain_input = "format json\n"
+            explain_input += f"output {provenance.name}\n"
+            explain_input += f"setdepth {proof_depth}\n"
+            explain_input += f'explain query("{p.src}", "{p.dst}")\n'
+            explain_input += "quit\n"
+
+            # Execute.
+            args = ["souffle", "-t", "explain", filename]
+            result = benchmark_subprocess(args, timeout=timeout, input=explain_input.encode())
+
+            # Verify the provenance file was written to.
+            assert os.path.exists(provenance.name)
+            provenance_size = os.path.getsize(provenance.name)
+            assert provenance_size > 0
+
+            logging.debug('provenance output: file %s size %d bytes', provenance.name, provenance_size)
+
+            return result
 
 
 class SWISolver(Solver):
@@ -282,6 +319,7 @@ def main(args):
             b"Query returned true"
         ),
         SouffleSolver(),
+        SouffleSolverProvenance(),
         SWISolver(),
     ]
     for solver in solvers:
