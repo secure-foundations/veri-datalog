@@ -42,6 +42,7 @@ datatype Proof = PStep(rule : Rule, s : Subst, branches : seq<Proof>) {
     predicate valid(rule_set : RuleSet) { 
         rule.complete_subst(s) &&
         |rule.body| == |branches| &&
+        rule in rule_set && 
         var rule' := rule.subst(s);
         forall i :: 0 <= i < |branches| ==>
             branches[i].valid(rule_set) &&
