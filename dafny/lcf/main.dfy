@@ -1,52 +1,116 @@
-type Subst = map<string, string>
 
-datatype Term = App(head : string, args : seq<string>) | Const(val :string) {
+datatype Const = Atom(val : string) | Nat(i : nat)
+type Subst = map<string, Const>
+
+datatype Term = Const(val : Const) | Var(v : string) { 
     predicate complete_subst(s : Subst) {
         match this 
-            case Const(v) => true
-            case App(head, args) =>  forall i :: 0 <= i < |args| ==> args[i] in s
+            case Var(v) => v in s
+            case Const(_) => true
     }
-    function subst(s : Subst) : Term
+    predicate concrete() { 
+        Const?
+    }
+    function subst(s : Subst) : (res : Term)
         requires complete_subst(s)
-     { 
-        match this
-            case Const(v) => this
-            case App(head, args) => 
-                var args' :=
-                    seq(|args|, i requires 0 <= i < |args| => s[args[i]]);
-                App(head, args')
-    }
-
+        ensures res.concrete()
+        {
+            match this
+                case Var(v) => Const(s[v])
+                case Const(_) => this
+        }
 }
 
-datatype Rule = Rule(head : Term, body : seq<Term>) {
+datatype NatPred = Leq | Geq | Neq {
+    function eval(x : nat, y:nat) : bool {
+        match this
+          case Leq => x <= y
+          case Geq => x >= y
+          case Neq => x != y
+    }
+}
+
+datatype Prop = App(head : string, args : seq<Term>) | Eq(l : Term, r : Term) | NatPred(p : NatPred, l : Term, r : Term) {
+    predicate complete_subst(s : Subst) { 
+        match this
+            case App(head, args) => forall i :: 0 <= i < |args| ==> args[i].complete_subst(s)
+            case Eq(x, y) => x.complete_subst(s) && y.complete_subst(s)
+            case NatPred(_, x, y) => x.complete_subst(s) && y.complete_subst(s)
+    }
+    predicate concrete() {
+        match this
+            case App(head, args) => forall i :: 0 <= i < |args| ==> args[i].concrete()
+            case Eq(x, y) => x.concrete() && y.concrete()
+            case NatPred(_, x, y) => x.concrete() && y.concrete()
+    }
+    function subst(s : Subst) : (res:Prop)    
+        requires complete_subst(s)
+        ensures res.concrete()
+        {
+        match this
+            case App(h, args) => App(h, seq(|args|, i requires 0 <= i < |args| => args[i].subst(s))) 
+            case Eq(x, y) => Eq(x.subst(s), y.subst(s))
+            case NatPred(p, x, y) => NatPred(p, x.subst(s), y.subst(s))
+    }
+    predicate symbolic() { 
+        this.App?
+    }
+
+    predicate valid()
+        requires !symbolic()
+        requires concrete() {
+        match this  
+            case Eq(x, y) => x.val == y.val
+            case NatPred(p, x, y) => x.val.Nat? && y.val.Nat? && (p.eval(x.val.i, y.val.i) == true)
+    } 
+}
+
+datatype Rule = Rule(head : Prop, body : seq<Prop>) {
     predicate complete_subst(s : Subst) { 
         head.complete_subst(s) && (forall i :: 0 <= i < |body| ==> body[i].complete_subst(s))
     }
 
-    function subst(s : Subst) : Rule 
+    predicate concrete() {
+        head.concrete() && forall i :: 0 <= i < |body| ==> body[i].concrete()
+    }
+
+    function subst(s : Subst) : (res:Rule)
         requires complete_subst(s)
+        ensures res.concrete()
     {
         var body' := seq(|body|, i requires 0 <= i < |body| => body[i].subst(s));
         Rule(head.subst(s), body')
     }
+
+    predicate wf() {
+        head.symbolic()
+    }
 }
 
-type RuleSet = seq<Rule>
 
-datatype Proof = PStep(rule : Rule, s : Subst, branches : seq<Proof>) {
-    function head() : Term
-        requires rule.complete_subst(s) {
-            rule.subst(s).head
+type RuleSet = rs:seq<Rule> | forall i :: 0 <= i < |rs| ==> rs[i].wf()
+    witness []
+    
+
+datatype Proof = PStep(rule : Rule, s : Subst, branches : seq<Proof>) | QED(p : Prop) {
+    function head() : Prop
+        requires PStep? ==> rule.complete_subst(s)
+     {
+        match this
+            case PStep(rule, s, branches) => rule.subst(s).head
+            case QED(p) => p
     }
     predicate valid(rule_set : RuleSet) { 
-        rule.complete_subst(s) &&
-        |rule.body| == |branches| &&
-        rule in rule_set && 
-        var rule' := rule.subst(s);
-        forall i :: 0 <= i < |branches| ==>
-            branches[i].valid(rule_set) &&
-            rule'.body[i] == branches[i].head()
+        match this 
+            case QED(p) => p.concrete() && !p.symbolic() && p.valid()
+            case PStep(rule, s, branches) => 
+                rule in rule_set && 
+                rule.complete_subst(s) &&
+                |rule.body| == |branches| &&
+                var rule' := rule.subst(s);
+                forall i :: 0 <= i < |rule'.body| ==>
+                    branches[i].valid(rule_set) &&
+                    rule'.body[i] == branches[i].head() 
     }
 }
 
@@ -63,11 +127,22 @@ datatype Result<A> = Ok(val : A) | Err {
     }
 }
 
-datatype Thm = Thm(val : Term, ghost p : Proof) {
+datatype Thm = Thm(val : Prop, ghost p : Proof) {
     ghost predicate wf(rule_set : RuleSet) {
         p.valid(rule_set) && p.head() == val
     }
 
+}
+
+function mk_leaf(p : Prop) : (res : Result<Thm>) 
+    ensures p.concrete() && !p.symbolic() && p.valid() ==> res.Ok?
+    ensures res.Ok? ==> res.val.val == p
+{
+    if p.concrete() && !p.symbolic() && p.valid() 
+    then
+        Ok(Thm(p, QED(p)))
+    else 
+        Err
 }
 
 function mk_thm(rs : RuleSet, i : nat, s : Subst, args : seq<Thm>) : (res : Result<Thm>)
@@ -83,6 +158,20 @@ function mk_thm(rs : RuleSet, i : nat, s : Subst, args : seq<Thm>) : (res : Resu
                 Ok(Thm(r.subst(s).head, p))
             else Err
     }
+
+function tst() : RuleSet {
+    [Rule(App("foo", [Var("x")]), [NatPred(Leq, Var("x"), Const(Nat(3)))])]
+} 
+
+function tst_thm() : Result<Thm> { 
+    var lf := mk_leaf(NatPred(Leq, Const(Nat(3)), Const(Nat(3)))).val;
+    var s : Subst := map["x" := Nat(3)];
+    Ok(mk_thm(tst(), 0, s, [lf]).val)
+}
+
+
+/*
+
 
 
 //// Extremely toy top-down ////
@@ -111,7 +200,7 @@ function unify_vars(s : seq<string>, t : seq<string>) : (res : Result<map<string
                 else Err 
 }
 
-function unify(r : Term, g : Term) : (res : Result<Subst>)
+function unify(r : Prop, g : Prop) : (res : Result<Subst>)
     ensures res.Ok? ==> r.complete_subst(res.val) && r.subst(res.val) == g
     {
         match (r, g)
@@ -127,7 +216,7 @@ function unify(r : Term, g : Term) : (res : Result<Subst>)
             case _ => Err
     }
 
-function find_unify(rs : RuleSet, goal : Term) : (res:Result<(nat, Subst)>)
+function find_unify(rs : RuleSet, goal : Prop) : (res:Result<(nat, Subst)>)
     ensures res.Ok? ==> res.val.0 < |rs| && unify(rs[res.val.0].head, goal) == Ok(res.val.1)
     {
         if rs == [] then Err else 
@@ -146,7 +235,7 @@ function find_unify(rs : RuleSet, goal : Term) : (res:Result<(nat, Subst)>)
 // - only tries the first matching rule it finds
 // - only works on rules without existential quantification (e.g., more variables in the body) 
 // - does not memoize subgoals
-function top_down(rs : RuleSet, goal : Term, bound : nat) : (res:Result<Thm>)
+function top_down(rs : RuleSet, goal : Prop, bound : nat) : (res:Result<Thm>)
     ensures res.Ok? ==> res.val.wf(rs) && res.val.val == goal
 
     decreases bound {
@@ -191,3 +280,4 @@ function bottom_up(rs : RuleSet, acc : seq<Thm>, bound : nat) : seq<Thm>
                 case Err => acc
                 case Ok(new_thm) => bottom_up(rs, [new_thm] + acc, bound - 1) 
 }
+*/
