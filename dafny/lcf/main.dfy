@@ -1,5 +1,5 @@
 
-datatype Const = Atom(val : string) | Nat(i : nat)
+datatype Const = Atom(val : string) | Nat(i : nat) | Str(s : string)
 type Subst = map<string, Const>
 
 datatype Term = Const(val : Const) | Var(v : string) {
@@ -30,18 +30,20 @@ datatype NatPred = Leq | Geq | Neq {
   }
 }
 
-datatype Prop = App(head : string, args : seq<Term>) | Eq(l : Term, r : Term) | NatPred(p : NatPred, l : Term, r : Term) {
+datatype Prop = App(head : string, args : seq<Term>) | Eq(l : Term, r : Term) | NatPred(p : NatPred, l : Term, r : Term) | SubString(str : Term, before : Term, len : Term, after : Term, sub : Term) {
   predicate complete_subst(s : Subst) {
     match this
     case App(head, args) => forall i :: 0 <= i < |args| ==> args[i].complete_subst(s)
     case Eq(x, y) => x.complete_subst(s) && y.complete_subst(s)
     case NatPred(_, x, y) => x.complete_subst(s) && y.complete_subst(s)
+    case SubString(str, before, len, after, sub) => str.complete_subst(s) && before.complete_subst(s) && len.complete_subst(s) && after.complete_subst(s) && sub.complete_subst(s)
   }
   predicate concrete() {
     match this
     case App(head, args) => forall i :: 0 <= i < |args| ==> args[i].concrete()
     case Eq(x, y) => x.concrete() && y.concrete()
     case NatPred(_, x, y) => x.concrete() && y.concrete()
+    case SubString(str, before, len, after, sub) => str.concrete() && before.concrete() && len.concrete() && after.concrete() && sub.concrete()
   }
   function subst(s : Subst) : (res:Prop)
     requires complete_subst(s)
@@ -51,6 +53,7 @@ datatype Prop = App(head : string, args : seq<Term>) | Eq(l : Term, r : Term) | 
     case App(h, args) => App(h, seq(|args|, i requires 0 <= i < |args| => args[i].subst(s)))
     case Eq(x, y) => Eq(x.subst(s), y.subst(s))
     case NatPred(p, x, y) => NatPred(p, x.subst(s), y.subst(s))
+    case SubString(str, before, len, after, sub) => SubString(str.subst(s), before.subst(s), len.subst(s), after.subst(s), sub.subst(s))
   }
   predicate symbolic() {
     this.App?
@@ -62,6 +65,11 @@ datatype Prop = App(head : string, args : seq<Term>) | Eq(l : Term, r : Term) | 
     match this
     case Eq(x, y) => x.val == y.val
     case NatPred(p, x, y) => x.val.Nat? && y.val.Nat? && (p.eval(x.val.i, y.val.i) == true)
+    case SubString(str, before, len, after, sub) => (
+      str.val.Str? && before.val.Nat? && len.val.Nat? && after.val.Nat? && sub.val.Str? &&
+      before.val.i+len.val.i+after.val.i == |str.val.s| &&
+      str.val.s[before.val.i..before.val.i + len.val.i] == sub.val.s
+    )
   }
 }
 
@@ -159,16 +167,25 @@ function mk_thm(rs : RuleSet, i : nat, s : Subst, args : seq<Thm>) : (res : Resu
   else Err
 }
 
-function tst() : RuleSet {
+function tst_nat() : RuleSet {
   [Rule(App("foo", [Var("x")]), [NatPred(Leq, Var("x"), Const(Nat(3)))])]
 }
 
-function tst_thm() : Result<Thm> {
+function tst_nat_thm() : Result<Thm> {
   var lf := mk_leaf(NatPred(Leq, Const(Nat(3)), Const(Nat(3)))).val;
   var s : Subst := map["x" := Nat(3)];
-  Ok(mk_thm(tst(), 0, s, [lf]).val)
+  Ok(mk_thm(tst_nat(), 0, s, [lf]).val)
 }
 
+function tst_sub_string() : RuleSet {
+  [Rule(App("foo", [Var("x")]), [SubString(Const(Str("hello world!")), Const(Nat(6)), Const(Nat(5)), Const(Nat(1)), Var("x"))])]
+}
+
+function tst_sub_string_thm() : Result<Thm> {
+  var lf := mk_leaf(SubString(Const(Str("hello world!")), Const(Nat(6)), Const(Nat(5)), Const(Nat(1)), Const(Str("world")))).val;
+  var s : Subst := map["x" := Str("world")];
+  Ok(mk_thm(tst_sub_string(), 0, s, [lf]).val)
+}
 
 /*
 
