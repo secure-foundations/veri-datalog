@@ -53,12 +53,13 @@ function string_join(sep : string, parts : seq<string>) : string {
   else parts[0] + sep + string_join(sep, parts[1..])
 }
 
-datatype Builtin = SubString | SplitString | Length | Reverse {
+datatype Builtin = SubString | SplitString | Length | Member | Reverse {
   predicate valid(args : seq<Const>) {
     match this {
       case SubString => |args| == 5 && args[0].Str? && args[1].Nat? && args[2].Nat? && args[3].Nat? && args[4].Str?
       case SplitString => |args| == 3 && args[0].Str? && args[1].Str? && args[2].List?
       case Length => |args| == 2 && args[0].List? && args[1].Nat?
+      case Member => |args| == 2 && args[1].List?
       case Reverse => |args| == 2 && args[0].List? && args[1].List?
     }
   }
@@ -82,6 +83,10 @@ datatype Builtin = SubString | SplitString | Length | Reverse {
       case Length => (
         var l, n := args[0], args[1];
         |l.l| == n.i
+      )
+      case Member => (
+        var e, l := args[0], args[1];
+        e in l.l
       )
       case Reverse => (
         var l, r := args[0], args[1];
@@ -260,6 +265,16 @@ function tst_length_thm() : Result<Thm> {
   var lf := mk_leaf(BuiltinOp(Length, [Const(List([Nat(1), Nat(2), Nat(3)])), Const(Nat(3))])).val;
   var s : Subst := map["x" := Nat(3)];
   Ok(mk_thm(tst_length(), 0, s, [lf]).val)
+}
+
+function tst_member() : RuleSet {
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(Member, [Var("x"), Const(List([Nat(1), Nat(2), Nat(3)]))])])]
+}
+
+function tst_member_thm() : Result<Thm> {
+  var lf := mk_leaf(BuiltinOp(Member, [Const(Nat(2)), Const(List([Nat(1), Nat(2), Nat(3)]))])).val;
+  var s : Subst := map["x" := Nat(2)];
+  Ok(mk_thm(tst_member(), 0, s, [lf]).val)
 }
 
 function tst_reverse() : RuleSet {
