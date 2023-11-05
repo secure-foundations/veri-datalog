@@ -30,28 +30,51 @@ datatype NatPred = Leq | Geq | Neq {
   }
 }
 
+datatype Builtin = SubString | Reverse {
+  predicate valid(args : seq<Const>) {
+    match this {
+      case SubString => |args| == 5 && args[0].Str? && args[1].Nat? && args[2].Nat? && args[3].Nat? && args[4].Str?
+      case Reverse => |args| == 2 && args[0].List? && args[1].List?
+    }
+  }
+
+  predicate eval(args : seq<Const>)
+    requires valid(args)
+  {
+    match this {
+      case SubString => (
+        var str, before, len, after, sub := args[0], args[1], args[2], args[3], args[4];
+        before.i+len.i+after.i == |str.s| &&
+        str.s[before.i..before.i + len.i] == sub.s
+      )
+      case Reverse => (
+        var l, r := args[0], args[1];
+        |l.l| == |r.l| &&
+        forall i :: 0 <= i < |l.l| ==> l.l[i] == r.l[|l.l|-1-i]
+      )
+    }
+  }
+}
+
 datatype Prop =
   App(head : string, args : seq<Term>) |
   Eq(l : Term, r : Term) |
   NatPred(p : NatPred, l : Term, r : Term) |
-  SubString(str : Term, before : Term, len : Term, after : Term, sub : Term) |
-  Reverse(l : Term, r : Term)
+  BuiltinOp(b : Builtin, args : seq<Term>)
 {
   predicate complete_subst(s : Subst) {
     match this
     case App(head, args) => forall i :: 0 <= i < |args| ==> args[i].complete_subst(s)
     case Eq(x, y) => x.complete_subst(s) && y.complete_subst(s)
     case NatPred(_, x, y) => x.complete_subst(s) && y.complete_subst(s)
-    case SubString(str, before, len, after, sub) => str.complete_subst(s) && before.complete_subst(s) && len.complete_subst(s) && after.complete_subst(s) && sub.complete_subst(s)
-    case Reverse(l, r) => l.complete_subst(s) && r.complete_subst(s)
+    case BuiltinOp(_, args) => forall i :: 0 <= i < |args| ==> args[i].complete_subst(s)
   }
   predicate concrete() {
     match this
     case App(head, args) => forall i :: 0 <= i < |args| ==> args[i].concrete()
     case Eq(x, y) => x.concrete() && y.concrete()
     case NatPred(_, x, y) => x.concrete() && y.concrete()
-    case SubString(str, before, len, after, sub) => str.concrete() && before.concrete() && len.concrete() && after.concrete() && sub.concrete()
-    case Reverse(l, r) => l.concrete() && r.concrete()
+    case BuiltinOp(_, args) => forall i :: 0 <= i < |args| ==> args[i].concrete()
   }
   function subst(s : Subst) : (res:Prop)
     requires complete_subst(s)
@@ -61,8 +84,7 @@ datatype Prop =
     case App(h, args) => App(h, seq(|args|, i requires 0 <= i < |args| => args[i].subst(s)))
     case Eq(x, y) => Eq(x.subst(s), y.subst(s))
     case NatPred(p, x, y) => NatPred(p, x.subst(s), y.subst(s))
-    case SubString(str, before, len, after, sub) => SubString(str.subst(s), before.subst(s), len.subst(s), after.subst(s), sub.subst(s))
-    case Reverse(l, r) => Reverse(l.subst(s), r.subst(s))
+    case BuiltinOp(b, args) => BuiltinOp(b, seq(|args|, i requires 0 <= i < |args| => args[i].subst(s)))
   }
   predicate symbolic() {
     this.App?
@@ -74,15 +96,9 @@ datatype Prop =
     match this
     case Eq(x, y) => x.val == y.val
     case NatPred(p, x, y) => x.val.Nat? && y.val.Nat? && (p.eval(x.val.i, y.val.i) == true)
-    case SubString(str, before, len, after, sub) => (
-      str.val.Str? && before.val.Nat? && len.val.Nat? && after.val.Nat? && sub.val.Str? &&
-      before.val.i+len.val.i+after.val.i == |str.val.s| &&
-      str.val.s[before.val.i..before.val.i + len.val.i] == sub.val.s
-    )
-    case Reverse(l, r) => (
-      l.val.List? && r.val.List? &&
-      |l.val.l| == |r.val.l| &&
-      forall i :: 0 <= i < |l.val.l| ==> l.val.l[i] == r.val.l[|l.val.l|-1-i]
+    case BuiltinOp(b, args) => (
+      var consts := seq(|args|, i requires 0 <= i < |args| => args[i].val);
+      b.valid(consts) && b.eval(consts)
     )
   }
 }
@@ -192,24 +208,24 @@ function tst_nat_thm() : Result<Thm> {
 }
 
 function tst_sub_string() : RuleSet {
-  [Rule(App("foo", [Var("x")]), [SubString(Const(Str("hello world!")), Const(Nat(6)), Const(Nat(5)), Const(Nat(1)), Var("x"))])]
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(SubString, [Const(Str("hello world!")), Const(Nat(6)), Const(Nat(5)), Const(Nat(1)), Var("x")])])]
 }
 
 function tst_sub_string_thm() : Result<Thm> {
-  var lf := mk_leaf(SubString(Const(Str("hello world!")), Const(Nat(6)), Const(Nat(5)), Const(Nat(1)), Const(Str("world")))).val;
+  var lf := mk_leaf(BuiltinOp(SubString, [Const(Str("hello world!")), Const(Nat(6)), Const(Nat(5)), Const(Nat(1)), Const(Str("world"))] )).val;
   var s : Subst := map["x" := Str("world")];
   Ok(mk_thm(tst_sub_string(), 0, s, [lf]).val)
 }
 
 function tst_reverse() : RuleSet {
-  [Rule(App("foo", [Var("x")]), [Reverse(Const(List([Nat(1), Nat(2), Nat(3)])), Var("x"))])]
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(Reverse, [Const(List([Nat(1), Nat(2), Nat(3)])), Var("x")])])]
 }
 
 function tst_reverse_thm() : Result<Thm> {
-  var lf := mk_leaf(Reverse(
-                      Const(List([Nat(1), Nat(2), Nat(3)])),
-                      Const(List([Nat(3), Nat(2), Nat(1)]))
-                    )).val;
+  var lf := mk_leaf(BuiltinOp(Reverse, [
+                                Const(List([Nat(1), Nat(2), Nat(3)])),
+                                Const(List([Nat(3), Nat(2), Nat(1)]))
+                              ])).val;
   var s : Subst := map["x" := List([Nat(3), Nat(2), Nat(1)])];
   Ok(mk_thm(tst_reverse(), 0, s, [lf]).val)
 }
