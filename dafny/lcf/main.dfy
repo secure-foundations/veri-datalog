@@ -1,3 +1,14 @@
+datatype Result<A> = Ok(val : A) | Err {
+  predicate IsFailure() { this.Err? }
+  function PropagateFailure() : Result<A>
+    requires IsFailure() {
+    Err
+  }
+  function Extract() : A
+    requires !IsFailure() {
+    val
+  }
+}
 
 datatype Const = Atom(val : string) | Nat(i : nat) | Str(s : string) | List(l : seq<Const>)
 type Subst = map<string, Const>
@@ -30,10 +41,23 @@ datatype NatPred = Leq | Geq | Neq {
   }
 }
 
-datatype Builtin = SubString | Reverse {
+function strings(consts : seq<Const>) : Result<seq<string>> {
+  if forall i :: 0 <= i < |consts| ==> consts[i].Str? then
+    Ok(seq(|consts|, i requires 0 <= i < |consts| => consts[i].s))
+  else Err
+}
+
+function string_join(sep : string, parts : seq<string>) : string {
+  if |parts| == 0 then ""
+  else if |parts| == 1 then parts[0]
+  else parts[0] + sep + string_join(sep, parts[1..])
+}
+
+datatype Builtin = SubString | SplitString | Reverse {
   predicate valid(args : seq<Const>) {
     match this {
       case SubString => |args| == 5 && args[0].Str? && args[1].Nat? && args[2].Nat? && args[3].Nat? && args[4].Str?
+      case SplitString => |args| == 3 && args[0].Str? && args[1].Str? && args[2].List?
       case Reverse => |args| == 2 && args[0].List? && args[1].List?
     }
   }
@@ -46,6 +70,13 @@ datatype Builtin = SubString | Reverse {
         var str, before, len, after, sub := args[0], args[1], args[2], args[3], args[4];
         before.i+len.i+after.i == |str.s| &&
         str.s[before.i..before.i + len.i] == sub.s
+      )
+      case SplitString => (
+        var str, sep, parts := args[0], args[1], args[2];
+        match strings(parts.l) {
+          case Ok(parts_strings) => str.s == string_join(sep.s, parts_strings)
+          case Err => false
+        }
       )
       case Reverse => (
         var l, r := args[0], args[1];
@@ -152,19 +183,6 @@ datatype Proof = PStep(rule : Rule, s : Subst, branches : seq<Proof>) | QED(p : 
   }
 }
 
-
-datatype Result<A> = Ok(val : A) | Err {
-  predicate IsFailure() { this.Err? }
-  function PropagateFailure() : Result<A>
-    requires IsFailure() {
-    Err
-  }
-  function Extract() : A
-    requires !IsFailure() {
-    val
-  }
-}
-
 datatype Thm = Thm(val : Prop, ghost p : Proof) {
   ghost predicate wf(rule_set : RuleSet) {
     p.valid(rule_set) && p.head() == val
@@ -215,6 +233,29 @@ function tst_sub_string_thm() : Result<Thm> {
   var lf := mk_leaf(BuiltinOp(SubString, [Const(Str("hello world!")), Const(Nat(6)), Const(Nat(5)), Const(Nat(1)), Const(Str("world"))] )).val;
   var s : Subst := map["x" := Str("world")];
   Ok(mk_thm(tst_sub_string(), 0, s, [lf]).val)
+}
+
+function tst_split_string() : RuleSet {
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(SplitString, [Const(Str("a.b")), Const(Str(".")), Var("x")])])]
+}
+
+function tst_string_split_thm() : Result<Thm> {
+  var prop := BuiltinOp(
+                SplitString,
+                [
+                  Const(Str("a.b")),
+                  Const(Str(".")),
+                  Const(
+                    List(
+                      [Str("a"), Str("b")]
+                    )
+                  )
+                ]
+              );
+  assert prop.valid();
+  var lf := mk_leaf(prop).val;
+  var s : Subst := map["x" :=  List([Str("a"), Str("b")])];
+  Ok(mk_thm(tst_split_string(), 0, s, [lf]).val)
 }
 
 function tst_reverse() : RuleSet {
