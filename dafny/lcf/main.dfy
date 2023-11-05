@@ -245,18 +245,7 @@ function tst_split_string() : RuleSet {
 }
 
 function tst_string_split_thm() : Result<Thm> {
-  var prop := BuiltinOp(
-                SplitString,
-                [
-                  Const(Str("a.b")),
-                  Const(Str(".")),
-                  Const(
-                    List(
-                      [Str("a"), Str("b")]
-                    )
-                  )
-                ]
-              );
+  var prop := BuiltinOp(SplitString, [Const(Str("a.b")), Const(Str(".")), Const( List( [Str("a"), Str("b")]))]);
   assert prop.valid();
   var lf := mk_leaf(prop).val;
   var s : Subst := map["x" :=  List([Str("a"), Str("b")])];
