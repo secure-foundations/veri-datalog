@@ -32,15 +32,6 @@ datatype Term = Const(val : Const) | Var(v : string) {
   }
 }
 
-datatype NatPred = Leq | Geq | Neq {
-  function eval(x : nat, y:nat) : bool {
-    match this
-    case Leq => x <= y
-    case Geq => x >= y
-    case Neq => x != y
-  }
-}
-
 function strings(consts : seq<Const>) : Result<seq<string>> {
   if forall i :: 0 <= i < |consts| ==> consts[i].Str? then
     Ok(seq(|consts|, i requires 0 <= i < |consts| => consts[i].s))
@@ -53,9 +44,10 @@ function string_join(sep : string, parts : seq<string>) : string {
   else parts[0] + sep + string_join(sep, parts[1..])
 }
 
-datatype Builtin = SubString | SplitString | Length | Member | Reverse {
+datatype Builtin = NatLeq | NatGeq | NatNeq | SubString | SplitString | Length | Member | Reverse {
   predicate valid(args : seq<Const>) {
     match this {
+      case NatLeq | NatGeq | NatNeq => |args| == 2 && args[0].Nat? && args[1].Nat?
       case SubString => |args| == 5 && args[0].Str? && args[1].Nat? && args[2].Nat? && args[3].Nat? && args[4].Str?
       case SplitString => |args| == 3 && args[0].Str? && args[1].Str? && args[2].List?
       case Length => |args| == 2 && args[0].List? && args[1].Nat?
@@ -68,6 +60,9 @@ datatype Builtin = SubString | SplitString | Length | Member | Reverse {
     requires valid(args)
   {
     match this {
+      case NatGeq => args[0].i <= args[1].i
+      case NatLeq => args[0].i >= args[1].i
+      case NatNeq => args[0].i != args[1].i
       case SubString => (
         var str, before, len, after, sub := args[0], args[1], args[2], args[3], args[4];
         before.i+len.i+after.i == |str.s| &&
@@ -100,21 +95,18 @@ datatype Builtin = SubString | SplitString | Length | Member | Reverse {
 datatype Prop =
   App(head : string, args : seq<Term>) |
   Eq(l : Term, r : Term) |
-  NatPred(p : NatPred, l : Term, r : Term) |
   BuiltinOp(b : Builtin, args : seq<Term>)
 {
   predicate complete_subst(s : Subst) {
     match this
     case App(head, args) => forall i :: 0 <= i < |args| ==> args[i].complete_subst(s)
     case Eq(x, y) => x.complete_subst(s) && y.complete_subst(s)
-    case NatPred(_, x, y) => x.complete_subst(s) && y.complete_subst(s)
     case BuiltinOp(_, args) => forall i :: 0 <= i < |args| ==> args[i].complete_subst(s)
   }
   predicate concrete() {
     match this
     case App(head, args) => forall i :: 0 <= i < |args| ==> args[i].concrete()
     case Eq(x, y) => x.concrete() && y.concrete()
-    case NatPred(_, x, y) => x.concrete() && y.concrete()
     case BuiltinOp(_, args) => forall i :: 0 <= i < |args| ==> args[i].concrete()
   }
   function subst(s : Subst) : (res:Prop)
@@ -124,7 +116,6 @@ datatype Prop =
     match this
     case App(h, args) => App(h, seq(|args|, i requires 0 <= i < |args| => args[i].subst(s)))
     case Eq(x, y) => Eq(x.subst(s), y.subst(s))
-    case NatPred(p, x, y) => NatPred(p, x.subst(s), y.subst(s))
     case BuiltinOp(b, args) => BuiltinOp(b, seq(|args|, i requires 0 <= i < |args| => args[i].subst(s)))
   }
   predicate symbolic() {
@@ -136,7 +127,6 @@ datatype Prop =
     requires concrete() {
     match this
     case Eq(x, y) => x.val == y.val
-    case NatPred(p, x, y) => x.val.Nat? && y.val.Nat? && (p.eval(x.val.i, y.val.i) == true)
     case BuiltinOp(b, args) => (
       var consts := seq(|args|, i requires 0 <= i < |args| => args[i].val);
       b.valid(consts) && b.eval(consts)
@@ -226,11 +216,11 @@ function mk_thm(rs : RuleSet, i : nat, s : Subst, args : seq<Thm>) : (res : Resu
 }
 
 function tst_nat() : RuleSet {
-  [Rule(App("foo", [Var("x")]), [NatPred(Leq, Var("x"), Const(Nat(3)))])]
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(NatLeq, [Var("x"), Const(Nat(3))])])]
 }
 
 function tst_nat_thm() : Result<Thm> {
-  var lf := mk_leaf(NatPred(Leq, Const(Nat(3)), Const(Nat(3)))).val;
+  var lf := mk_leaf(BuiltinOp(NatLeq, [Const(Nat(3)), Const(Nat(3))])).val;
   var s : Subst := map["x" := Nat(3)];
   Ok(mk_thm(tst_nat(), 0, s, [lf]).val)
 }
