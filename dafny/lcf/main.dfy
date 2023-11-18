@@ -156,7 +156,6 @@ datatype Rule = Rule(head : Prop, body : seq<Prop>) {
   }
 }
 
-
 type RuleSet = rs:seq<Rule> | forall i :: 0 <= i < |rs| ==> rs[i].wf()
   witness []
 
@@ -225,6 +224,7 @@ function tst_nat_thm() : Result<Thm> {
   Ok(mk_thm(tst_nat(), 0, s, [lf]).val)
 }
 
+/*
 function tst_sub_string() : RuleSet {
   [Rule(App("foo", [Var("x")]), [BuiltinOp(SubString, [Const(Str("hello world!")), Const(Nat(6)), Const(Nat(5)), Const(Nat(1)), Var("x")])])]
 }
@@ -279,6 +279,124 @@ function tst_reverse_thm() : Result<Thm> {
   var s : Subst := map["x" := List([Nat(3), Nat(2), Nat(1)])];
   Ok(mk_thm(tst_reverse(), 0, s, [lf]).val)
 }
+*/
+
+//// Trace Reconstruction
+
+datatype Port = Call | Unify | Redo | Exit | Fail
+
+datatype Event = Event(port : Port, level : nat, prop : Prop, i : nat)
+
+type Trace = seq<Event>
+
+datatype Frame = Frame(level : nat, s : Subst, args: seq<Thm>)
+
+method verify_trace(rs : RuleSet, trace : Trace) returns (res : Result<Thm>)
+  //ensures res.Ok? ==> res.val.prop == Last(trace).prop
+{
+  var stack: seq<Frame> := [];
+  var level := 0;
+  var i := 0;
+  while i < |trace| {
+    var event := trace[i];
+    i := i+1;
+
+    match event.port {
+      case Unify => {
+        if event.level <= level {
+          return Err;
+        }
+        var s: Subst := map[];
+        var frame := Frame(level, s, []);
+        stack := stack + [frame];
+        level := frame.level;
+      }
+
+      case Exit => continue;
+
+      case Call => continue;
+      case Redo => continue;
+      case Fail => continue;
+    }
+  }
+  return Err;
+}
+
+function mk_fact(head : string, args : seq<string>) : Rule {
+  Rule(App(head, seq(|args|, i requires 0 <= i < |args| => Const(Atom(args[i])))), [])
+}
+
+function connectivity_rules() : RuleSet {
+  [
+    // connected(A, B) :- edge(A, B).
+    Rule(
+      App("connected", [Var("A"), Var("B")]),
+      [App("edge", [Var("A"), Var("B")])]
+    ),
+    // connected(A, B) :- edge(A, M), connected(M, B).
+    Rule(
+      App("connected", [Var("A"), Var("B")]),
+      [App("edge", [Var("A"), Var("M")]), App("edge", [Var("M"), Var("B")])]
+    ),
+    // query(S, D) :- source(S), destination(D), connected(S, D).
+    Rule(
+      App("query", [Var("S"), Var("D")]),
+      [
+        App("source", [Var("S")]),
+        App("destination", [Var("D")]),
+        App("connected", [Var("S"), Var("D")])
+      ]
+    ),
+
+    // edge("n1", "n3").
+    // edge("n1", "n2").
+    // edge("n0", "n1").
+    mk_fact("edge", ["n1", "n3"]),
+    mk_fact("edge", ["n1", "n2"]),
+    mk_fact("edge", ["n0", "n1"]),
+
+    // source("n0").
+    // destination("n1").
+    mk_fact("source", ["n0"]),
+    mk_fact("destination", ["n1"])
+  ]
+}
+
+function connectivity_trace() : Trace {
+  [
+    //   Call: (15) query(_6418, _6420)
+    //   Unify: (15) query(_6418, _6420)
+    Event(Unify, 15, App("query", [Var("_6418"), Var("_6420")]), 0),
+    //    Call: (16) source(_6418)
+    //    Unify: (16) source("n0")
+    Event(Unify, 16, App("source", [Const(Atom("n0"))]), 0)
+    //    Exit: (16) source("n0")
+    //    Call: (16) destination(_6420)
+    //    Unify: (16) destination("n3")
+    //    Exit: (16) destination("n3")
+    //    Call: (16) connected("n0", "n3")
+    //    Unify: (16) connected("n0", "n3")
+    //     Call: (17) edge("n0", "n3")
+    //     Fail: (17) edge("n0", "n3")
+    //    Redo: (16) connected("n0", "n3")
+    //    Unify: (16) connected("n0", "n3")
+    //     Call: (17) edge("n0", _16264)
+    //     Unify: (17) edge("n0", "n1")
+    //     Exit: (17) edge("n0", "n1")
+    //     Call: (17) connected("n1", "n3")
+    //     Unify: (17) connected("n1", "n3")
+    //      Call: (18) edge("n1", "n3")
+    //      Unify: (18) edge("n1", "n3")
+    //      Exit: (18) edge("n1", "n3")
+    //     Exit: (17) connected("n1", "n3")
+    //    Exit: (16) connected("n0", "n3")
+    //   Exit: (15) query("n0", "n3")
+  ]
+}
+
+// method Main() {
+//
+// }
 
 /*
 
