@@ -303,6 +303,7 @@ method verify_trace(rs : RuleSet, trace : Trace) returns (res : Result<Thm>)
 
     match event.port {
       case Unify => {
+        print "unify\n";
         if event.level <= level {
           return Err;
         }
@@ -394,9 +395,15 @@ function connectivity_trace() : Trace {
   ]
 }
 
-// method Main() {
-//
-// }
+method Main() {
+  var rs := connectivity_rules();
+  var trace := connectivity_trace();
+  var res := verify_trace(rs, trace);
+  match res {
+    case Ok(thm) => print "ok\n";
+    case Err => print "FAIL\n";
+  }
+}
 
 /*
 
