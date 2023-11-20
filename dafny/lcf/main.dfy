@@ -431,6 +431,7 @@ method verify_trace(rs : RuleSet, trace : Trace) returns (res : Result<seq<Thm>>
 }
 */
 
+
 datatype Match = Match(s : Subst, thm : Thm)
 
 method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (res : Result<(Match, Trace)>)
@@ -443,6 +444,8 @@ method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (r
   }
 
   // Expect the first trace to be Unify.
+  // TODO(mbm): handle Call and Redo trace events
+  // TODO(mbm): helper function for popping from a trace
   if |trace| == 0 {
     print "empty trace\n";
     return Err;
@@ -465,6 +468,7 @@ method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (r
   var r := rs[u.i];
 
   // Expect to see traces for the rule body.
+  // NOTE: fragile assumption that the trace visits the rule body in the same order
   var s: Subst := map[];
   var args: seq<Thm> := [];
   var i := 0;
@@ -495,6 +499,7 @@ method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (r
   }
 
   // Exit.
+  // TODO(mbm): handle Fail and Redo
   if |trace| == 0 {
     print "empty trace\n";
     return Err;
