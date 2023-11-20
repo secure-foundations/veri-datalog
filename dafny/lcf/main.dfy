@@ -305,9 +305,9 @@ datatype Event = Event(port : Port, level : nat, prop : Prop, i : nat)
 
 type Trace = seq<Event>
 
-datatype Frame = Frame(level : nat, s : Subst, args: seq<Thm>) {
-  ghost predicate wf(rs : RuleSet) { forall j :: 0 <= j < |args| ==> args[j].wf(rs) }
-}
+//datatype Frame = Frame(level : nat, s : Subst, args: seq<Thm>) {
+//  ghost predicate wf(rs : RuleSet) { forall j :: 0 <= j < |args| ==> args[j].wf(rs) }
+//}
 
 //function unify_term(s : Term, t : Term) : (res : Result<Subst>)
 //  requires t.concrete()
@@ -342,6 +342,7 @@ function unify(r : Prop, g : Prop) : (res : Result<Subst>)
   case _ => Err
 }
 
+/*
 method verify_trace(rs : RuleSet, trace : Trace) returns (res : Result<seq<Thm>>)
   // ensures res.Ok? ==> res.val.prop == Last(trace).prop
 {
@@ -428,6 +429,127 @@ method verify_trace(rs : RuleSet, trace : Trace) returns (res : Result<seq<Thm>>
   }
   return Err;
 }
+*/
+
+datatype Match = Match(s : Subst, thm : Thm)
+
+method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (res : Result<(Match, Trace)>)
+  ensures res.Ok? ==> res.val.0.thm.wf(rs)
+  decreases bound // TODO(mbm): use |trace| to prove termination
+{
+  if bound == 0 {
+    print "exhausted bound\n";
+    return Err;
+  }
+
+  // Expect the first trace to be Unify.
+  if |trace| == 0 {
+    print "empty trace\n";
+    return Err;
+  }
+
+  var u := trace[0];
+  var trace := trace[1..];
+  if u.port != Unify {
+    print "unexpected trace port";
+    return Err;
+  }
+
+  print u, "\n";
+
+  // Unify port tells us which rule we are applying.
+  if u.i >= |rs| {
+    print "bad rule index\n";
+    return Err;
+  }
+  var r := rs[u.i];
+
+  // Expect to see traces for the rule body.
+  var s: Subst := map[];
+  var args: seq<Thm> := [];
+  var i := 0;
+  while i < |r.body|
+    invariant forall j :: 0 <= j < |args| ==> args[j].wf(rs)
+  {
+    var subgoal := r.body[i];
+    var res := trace_call(rs, subgoal, trace, bound-1);
+    match res {
+      case Ok((m, rest)) => {
+        var maybe_subst := merge_subst(s, m.s);
+        match maybe_subst {
+          case Ok(subst) => s := subst;
+          case Err => {
+            print "failed to merge substitutions\n";
+            return Err;
+          }
+        }
+        args := args + [m.thm];
+        trace := rest;
+      }
+      case Err => {
+        print "failed subgoal trace\n";
+        return Err;
+      }
+    }
+    i := i+1;
+  }
+
+  // Exit.
+  if |trace| == 0 {
+    print "empty trace\n";
+    return Err;
+  }
+
+  var exit := trace[0];
+  trace := trace[1..];
+  if exit.port != Exit {
+    print "unexpected trace port\n";
+    return Err;
+  }
+
+  if !exit.prop.concrete() {
+    print "expect concrete exit\n";
+    return Err;
+  }
+
+  // Unify exit with goal.
+  print "unify: g=", g, " exit=", exit.prop, "\n";
+  var goal_subst: Subst;
+  var maybe_subst := unify(g, exit.prop);
+  match maybe_subst {
+    case Ok(subst) => {
+      goal_subst := subst;
+    }
+    case Err => {
+      print "failed to unify with exit\n";
+      return Err;
+    }
+  }
+
+  var maybe_merged := merge_subst(s, goal_subst);
+  match maybe_merged {
+    case Ok(merged) => s := merged;
+    case Err => {
+      print "failed to merge substitution\n";
+      return Err;
+    }
+  }
+
+  // Deduce theorem.
+  print "mk_thm: i=", u.i, " s=", s, " args=", args, "\n";
+  var maybe_thm := mk_thm(rs, u.i, s, args);
+  match maybe_thm {
+    // TODO(mbm): trim down the subst?
+    case Ok(thm) => {
+      print "mk_thm: success\n";
+      return Ok((Match(goal_subst, thm), trace));
+    }
+    case Err => {
+      print "failed to deduce thm\n";
+      return Err;
+    }
+  }
+}
 
 function mk_fact(head : string, args : seq<string>) : Rule {
   Rule(App(head, seq(|args|, i requires 0 <= i < |args| => Const(Atom(args[i])))), [])
@@ -443,7 +565,7 @@ function connectivity_rules() : RuleSet {
     // connected(A, B) :- edge(A, M), connected(M, B).
     /*1*/Rule(
       App("connected", [Var("A"), Var("B")]),
-      [App("edge", [Var("A"), Var("M")]), App("edge", [Var("M"), Var("B")])]
+      [App("edge", [Var("A"), Var("M")]), App("connected", [Var("M"), Var("B")])]
     ),
     // query(S, D) :- source(S), destination(D), connected(S, D).
     /*2*/Rule(
@@ -463,17 +585,19 @@ function connectivity_rules() : RuleSet {
     /*5*/mk_fact("edge", ["n0", "n1"]),
 
     // source("n0").
-    // destination("n1").
+    // destination("n3").
     /*6*/mk_fact("source", ["n0"]),
-    /*7*/mk_fact("destination", ["n1"])
+    /*7*/mk_fact("destination", ["n3"])
   ]
 }
 
-function connectivity_trace() : Trace {
+function connectivity_trace() : (trace : Trace)
+  ensures |trace| > 0
+{
   [
     //   Call: (15) query(_6418, _6420)
     //   Unify: (15) query(_6418, _6420)
-    //Event(Unify, 15, App("query", [Var("_6418"), Var("_6420")]), 2),
+    Event(Unify, 15, App("query", [Var("_6418"), Var("_6420")]), 2),
     //    Call: (16) source(_6418)
     //    Unify: (16) source("n0")
     Event(Unify, 16, App("source", [Const(Atom("n0"))]), 6),
@@ -493,24 +617,31 @@ function connectivity_trace() : Trace {
     Event(Unify, 16, App("connected", [Const(Atom("n0")), Const(Atom("n3"))]), 1),
     //     Call: (17) edge("n0", _16264)
     //     Unify: (17) edge("n0", "n1")
+    Event(Unify, 17, App("edge", [Const(Atom("n0")), Const(Atom("n1"))]), 5),
     //     Exit: (17) edge("n0", "n1")
+    Event(Exit, 17, App("edge", [Const(Atom("n0")), Const(Atom("n1"))]), 5),
     //     Call: (17) connected("n1", "n3")
     //     Unify: (17) connected("n1", "n3")
+    Event(Unify, 17, App("connected", [Const(Atom("n1")), Const(Atom("n3"))]), 0),
     //      Call: (18) edge("n1", "n3")
     //      Unify: (18) edge("n1", "n3")
+    Event(Unify, 18, App("edge", [Const(Atom("n1")), Const(Atom("n3"))]), 3),
     //      Exit: (18) edge("n1", "n3")
+    Event(Exit, 18, App("edge", [Const(Atom("n1")), Const(Atom("n3"))]), 3),
     //     Exit: (17) connected("n1", "n3")
+    Event(Exit, 17, App("connected", [Const(Atom("n1")), Const(Atom("n3"))]), 0),
     //    Exit: (16) connected("n0", "n3")
-    Event(Exit, 16, App("connected", [Const(Atom("n0")), Const(Atom("n3"))]), 1)
+    Event(Exit, 16, App("connected", [Const(Atom("n0")), Const(Atom("n3"))]), 1),
     //   Exit: (15) query("n0", "n3")
-    //Event(Exit, 15, App("query", [Const(Atom("n0")), Const(Atom("n3"))]), 2)
+    Event(Exit, 15, App("query", [Const(Atom("n0")), Const(Atom("n3"))]), 2)
   ]
 }
 
 method Main() {
   var rs := connectivity_rules();
   var trace := connectivity_trace();
-  var res := verify_trace(rs, trace);
+  var g := trace[0].prop;
+  var res := trace_call(rs, g, trace, 0x1000_0000_0000);
   match res {
     case Ok(thm) => print "ok\n";
     case Err => print "FAIL\n";
