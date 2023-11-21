@@ -345,7 +345,6 @@ method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (r
 
   // Expect the first trace to be Unify.
   // TODO(mbm): handle Call and Redo trace events
-  // TODO(mbm): helper function for popping from a trace
   var maybe_next := trace_expect(trace, Unify);
   var u: Event;
   var trace: Trace;
@@ -450,17 +449,13 @@ method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (r
   }
 }
 
-//// Experiment
+//// Incomplete experiment at a more functional style for trace reconstruction.
 
 function pop(trace : Trace, port : Port) : (res : Result<(Event, Trace)>)
 {
   if |trace| == 0 || trace[0].port != port then Err
   else Ok((trace[0], trace[1..]))
 }
-
-// method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (res : Result<(Match, Trace)>)
-//   ensures res.Ok? ==> res.val.0.thm.wf(rs)
-//   decreases bound // TODO(mbm): use |trace| to prove termination
 
 datatype Matches = Matches(s : Subst, args: seq<Thm>) {
   function merge(m : Match) : Result<Matches> {
@@ -477,15 +472,15 @@ function body(trace : Trace, rs : RuleSet, gs : seq<Prop>, bound : nat) : (res :
   if bound == 0 then Err
   else if |gs| == 0 then Ok((Matches(map[], []), trace))
   else match reconstruct(trace, rs, gs[0], bound-1) {
-    case Ok((m, rest)) => match body(rest, rs, gs[1..], bound-1) {
-      case Ok((ms, rest)) => match ms.merge(m) {
-        case Ok(merged) => Ok((merged, rest))
-        case Err => Err
-      }
-      case Err => Err
-    }
-    case Err => Err
-  }
+         case Ok((m, rest)) => match body(rest, rs, gs[1..], bound-1) {
+           case Ok((ms, rest)) => match ms.merge(m) {
+             case Ok(merged) => Ok((merged, rest))
+             case Err => Err
+           }
+           case Err => Err
+         }
+         case Err => Err
+       }
 }
 
 function reconstruct(trace : Trace, rs : RuleSet, gs : Prop, bound : nat) : (res : Result<(Match, Trace)>)
@@ -493,76 +488,18 @@ function reconstruct(trace : Trace, rs : RuleSet, gs : Prop, bound : nat) : (res
 {
   if bound == 0 then Err
   else match pop(trace, Unify) {
-    case Ok((u, rest)) =>
-      if u.i >= |rs| then Err // TODO: require this property
-      else match body(rest, rs, rs[u.i].body, bound-1) {
-        case Ok((ms, rest)) => match pop(rest, Exit) {
-          case Ok((e, rest)) => Err
-          case Err => Err
-        }
-        case Err => Err
-      }
-    case Err => Err
-  }
+         case Ok((u, rest)) =>
+           if u.i >= |rs| then Err // TODO: require this property
+           else match body(rest, rs, rs[u.i].body, bound-1) {
+                  case Ok((ms, rest)) => match pop(rest, Exit) {
+                    case Ok((e, rest)) => Err
+                    case Err => Err
+                  }
+                  case Err => Err
+                }
+         case Err => Err
+       }
 }
-
-//   // Exit.
-//   // TODO(mbm): handle Fail and Redo
-//   if |trace| == 0 {
-//     print "empty trace\n";
-//     return Err;
-//   }
-//
-//   var exit := trace[0];
-//   trace := trace[1..];
-//   if exit.port != Exit {
-//     print "unexpected trace port\n";
-//     return Err;
-//   }
-//
-//   if !exit.prop.concrete() {
-//     print "expect concrete exit\n";
-//     return Err;
-//   }
-//
-//   // Unify exit with goal.
-//   print "unify: g=", g, " exit=", exit.prop, "\n";
-//   var goal_subst: Subst;
-//   var maybe_subst := unify(g, exit.prop);
-//   match maybe_subst {
-//     case Ok(subst) => {
-//       goal_subst := subst;
-//     }
-//     case Err => {
-//       print "failed to unify with exit\n";
-//       return Err;
-//     }
-//   }
-//
-//   var maybe_merged := merge_subst(s, goal_subst);
-//   match maybe_merged {
-//     case Ok(merged) => s := merged;
-//     case Err => {
-//       print "failed to merge substitution\n";
-//       return Err;
-//     }
-//   }
-//
-//   // Deduce theorem.
-//   print "mk_thm: i=", u.i, " s=", s, " args=", args, "\n";
-//   var maybe_thm := mk_thm(rs, u.i, s, args);
-//   match maybe_thm {
-//     // TODO(mbm): trim down the subst?
-//     case Ok(thm) => {
-//       print "mk_thm: success\n";
-//       return Ok((Match(goal_subst, thm), trace));
-//     }
-//     case Err => {
-//       print "failed to deduce thm\n";
-//       return Err;
-//     }
-//   }
-// }
 
 function mk_fact(head : string, args : seq<string>) : Rule {
   Rule(App(head, seq(|args|, i requires 0 <= i < |args| => Const(Atom(args[i])))), [])
