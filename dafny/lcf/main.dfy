@@ -346,12 +346,11 @@ method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (r
   // Expect the first trace to be Unify.
   // TODO(mbm): handle Call and Redo trace events
   var maybe_next := trace_expect(trace, Unify);
-  var u: Event;
-  var trace: Trace;
-  match maybe_next {
-    case Ok((event, rest)) => { u := event; trace := rest; }
-    case Err => return Err;
+  if maybe_next.Err? {
+    return Err;
   }
+  var u := maybe_next.val.0;
+  var trace := maybe_next.val.1;
 
   // Unify port tells us which rule we are applying.
   if u.i >= |rs| {
@@ -449,6 +448,17 @@ method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (r
   }
 }
 
+//// Trace tree construction.
+
+datatype TraceNode = TraceNode(i : nat, prop : Prop, children : seq<TraceNode>)
+
+method build_trace_tree(trace : Trace, level : nat) returns (res : Result<seq<TraceNode>>) {
+  while |trace| > 0 {
+
+  }
+}
+
+/*
 //// Incomplete experiment at a more functional style for trace reconstruction.
 
 function pop(trace : Trace, port : Port) : (res : Result<(Event, Trace)>)
@@ -500,6 +510,8 @@ function reconstruct(trace : Trace, rs : RuleSet, gs : Prop, bound : nat) : (res
          case Err => Err
        }
 }
+
+*/
 
 function mk_fact(head : string, args : seq<string>) : Rule {
   Rule(App(head, seq(|args|, i requires 0 <= i < |args| => Const(Atom(args[i])))), [])
