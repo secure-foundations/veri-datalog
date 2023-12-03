@@ -450,12 +450,116 @@ method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (r
 
 //// Trace tree construction.
 
-datatype TraceNode = TraceNode(i : nat, prop : Prop, children : seq<TraceNode>)
-
-method build_trace_tree(trace : Trace, level : nat) returns (res : Result<seq<TraceNode>>) {
-  while |trace| > 0 {
-
+datatype TraceNode = TraceNode(i : nat, prop : Prop, children : seq<TraceNode>) {
+  method dump() {
+    dump_indent("");
   }
+
+  method dump_indent(indent : string) {
+    print indent, "rule=", i, " prop=", prop, "\n";
+    var i := 0;
+    while i < |children| {
+      children[i].dump_indent(indent+"  ");
+      i := i + 1;
+    }
+  }
+}
+
+datatype Outcome = Success(nodes : seq<TraceNode>) | Failure
+
+method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (res : Result<(Outcome, Trace)>)
+  ensures res.Ok? ==> |res.val.1| <= |trace|
+  decreases bound
+{
+  if bound == 0 {
+    return Err;
+  }
+  print "build_trace_tree: level ", min_level, "\n";
+
+  var nodes: seq<TraceNode> := [];
+  var trace := trace;
+  while |trace| > 0 && trace[0].level >= min_level
+    decreases |trace|
+  {
+    // 1. Collects all rules that might match by having a head with the same name and number of arguments
+    //      call is traced, once, if any rules might match.
+    //      redo is also traced when the engine backtracks to find the next matching rule.
+    var collect := trace[0];
+    if collect.port != Call && collect.port != Redo {
+      print "expected: call or redo\n";
+      return Err;
+    }
+    var level := collect.level;
+    trace := trace[1..];
+    print "collect: ", collect, "\n";
+
+    // 2. Finds the next matching rule whose head can be unified with the predicate
+    //      unify is traced with the results of unification if one is found.
+    //      fail is traced if no rule heads can be unified.
+    if |trace| == 0 {
+      print "unexpected end of trace\n";
+      return Err;
+    }
+    var unify := trace[0];
+    trace := trace[1..];
+    if unify.level != level {
+      print "level mismatch\n";
+      return Err;
+    }
+    if unify.port == Fail {
+      print "failure: return\n";
+      return Ok((Failure, trace));
+    }
+    if unify.port != Unify {
+      print "expected: unify\n";
+      return Err;
+    }
+    print "unify: ", unify, "\n";
+
+    // 3. Applies variable assignments from unification to clauses in the rule
+    //    body and continues at #1 with the updated clauses.
+    var maybe_body := build_trace_tree(trace, level+1, bound-1);
+    if maybe_body.Err? {
+      print "recursion error\n";
+      return Err;
+    }
+    var outcome := maybe_body.val.0;
+    trace := maybe_body.val.1;
+    if outcome.Failure? {
+      print "failure: continue\n";
+      continue;
+    }
+
+    // 4. After all of the body clauses of the matched rule have either succeeded, failed, or thrown an exception:
+    //      exit is traced if all of them succeeded (meaning this rule is true).
+    //      fail is traced if any of them failed (meaning this rule is false).
+    //      exception is traced if any of them threw an exception.
+    if |trace| == 0 {
+      print "unexpected end of trace\n";
+      return Err;
+    }
+    var exit := trace[0];
+    trace := trace[1..];
+    print "exit: ", exit, "\n";
+
+    match exit.port {
+      case Exit => {
+        nodes := nodes + [TraceNode(unify.i, exit.prop, outcome.nodes)];
+        print "exit: success: add to nodes\n";
+        continue;
+      }
+      case Fail => {
+        print "exit: fail\n";
+        return Ok((Failure, trace));
+      }
+      case _ => {
+        print "expected: exit or fail\n";
+        print exit, "\n";
+        return Err;
+      }
+    }
+  }
+  return Ok((Success(nodes), trace));
 }
 
 /*
@@ -558,34 +662,45 @@ function connectivity_trace() : (trace : Trace)
 {
   [
     //   Call: (15) query(_6418, _6420)
+    Event(Call, 15, App("query", [Var("_6418"), Var("_6420")]), 2),
     //   Unify: (15) query(_6418, _6420)
     Event(Unify, 15, App("query", [Var("_6418"), Var("_6420")]), 2),
     //    Call: (16) source(_6418)
+    Event(Call, 16, App("source", [Var("_6418")]), 6),
     //    Unify: (16) source("n0")
     Event(Unify, 16, App("source", [Const(Atom("n0"))]), 6),
     //    Exit: (16) source("n0")
     Event(Exit, 16, App("source", [Const(Atom("n0"))]), 6),
     //    Call: (16) destination(_6420)
+    Event(Call, 16, App("destination", [Var("_6420")]), 6),
     //    Unify: (16) destination("n3")
     Event(Unify, 16, App("destination", [Const(Atom("n3"))]), 7),
     //    Exit: (16) destination("n3")
     Event(Exit, 16, App("destination", [Const(Atom("n3"))]), 7),
     //    Call: (16) connected("n0", "n3")
+    Event(Call, 16, App("connected", [Const(Atom("n0")), Const(Atom("n3"))]), 0),
     //    Unify: (16) connected("n0", "n3")
+    Event(Unify, 16, App("connected", [Const(Atom("n0")), Const(Atom("n3"))]), 0),
     //     Call: (17) edge("n0", "n3")
+    Event(Call, 17, App("edge", [Const(Atom("n0")), Const(Atom("n3"))]), 0),
     //     Fail: (17) edge("n0", "n3")
+    Event(Fail, 17, App("edge", [Const(Atom("n0")), Const(Atom("n3"))]), 0),
     //    Redo: (16) connected("n0", "n3")
+    Event(Redo, 16, App("connected", [Const(Atom("n0")), Const(Atom("n3"))]), 1),
     //    Unify: (16) connected("n0", "n3")
     Event(Unify, 16, App("connected", [Const(Atom("n0")), Const(Atom("n3"))]), 1),
     //     Call: (17) edge("n0", _16264)
+    Event(Call, 17, App("edge", [Const(Atom("n0")), Var("_16264")]), 5),
     //     Unify: (17) edge("n0", "n1")
     Event(Unify, 17, App("edge", [Const(Atom("n0")), Const(Atom("n1"))]), 5),
     //     Exit: (17) edge("n0", "n1")
     Event(Exit, 17, App("edge", [Const(Atom("n0")), Const(Atom("n1"))]), 5),
     //     Call: (17) connected("n1", "n3")
+    Event(Call, 17, App("connected", [Const(Atom("n1")), Const(Atom("n3"))]), 0),
     //     Unify: (17) connected("n1", "n3")
     Event(Unify, 17, App("connected", [Const(Atom("n1")), Const(Atom("n3"))]), 0),
     //      Call: (18) edge("n1", "n3")
+    Event(Call, 18, App("edge", [Const(Atom("n1")), Const(Atom("n3"))]), 3),
     //      Unify: (18) edge("n1", "n3")
     Event(Unify, 18, App("edge", [Const(Atom("n1")), Const(Atom("n3"))]), 3),
     //      Exit: (18) edge("n1", "n3")
@@ -599,7 +714,26 @@ function connectivity_trace() : (trace : Trace)
   ]
 }
 
-method Main() {
+method run_trace_tree_build() {
+  var trace := connectivity_trace();
+  var res := build_trace_tree(trace, 0, 0x1000_0000_0000);
+  if res.Err? {
+    print "error\n";
+    return;
+  }
+  var outcome := res.val.0;
+  if outcome.Failure? {
+    print "failure\n";
+    return;
+  }
+  var i := 0;
+  while i < |outcome.nodes| {
+    outcome.nodes[i].dump();
+    i := i+1;
+  }
+}
+
+method run_trace_reconstruction() {
   var rs := connectivity_rules();
   var trace := connectivity_trace();
   var g := trace[0].prop;
@@ -608,6 +742,11 @@ method Main() {
     case Ok(thm) => print "ok\n";
     case Err => print "FAIL\n";
   }
+}
+
+method Main() {
+  run_trace_tree_build();
+  // run_trace_reconstruction();
 }
 
 /*
