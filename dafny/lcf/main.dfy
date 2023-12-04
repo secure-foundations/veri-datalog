@@ -479,6 +479,7 @@ datatype Outcome = Success(nodes : seq<TraceNode>) | Failure {
   }
 }
 
+// Process a sequence of trace events into a trace tree of the successful search path.
 method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (res : Result<(Outcome, Trace)>)
   ensures res.Ok? ==> res.val.0.wf() && |res.val.1| <= |trace|
   decreases bound
@@ -571,6 +572,7 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
   return Ok((Success(nodes), trace));
 }
 
+// Derive a theorem from a trace tree node.
 method reconstruct(node : TraceNode, g : Prop, rs : RuleSet) returns (res : Result<Match>)
   requires node.wf()
   ensures res.Ok? ==> res.val.thm.wf(rs)
