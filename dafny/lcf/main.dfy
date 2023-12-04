@@ -580,50 +580,88 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
   return Ok((Success(nodes), trace));
 }
 
-datatype Matches = Matches(s : Subst, args: seq<Thm>) {
-  ghost predicate wf(rs : RuleSet) { forall j :: 0 <= j < |args| ==> args[j].wf(rs) }
-
-  function merge(m : Match) : Result<Matches> {
-    match merge_subst(s, m.s) {
-      case Ok(sbst) => Ok(Matches(sbst, args + [m.thm]))
-      case Err => Err
-    }
-  }
-}
-
-function body(nodes : seq<TraceNode>, gs : seq<Prop>, rs : RuleSet) : (res : Result<Matches>)
-  requires forall i :: 0 <= i < |nodes| ==> nodes[i].wf()
-  ensures res.Ok? ==> res.val.wf(rs)
-{
-  if |nodes| != |gs| then Err
-  else if |gs| == 0 then Ok(Matches(map[], []))
-  else match reconstruct(nodes[0], gs[0], rs) {
-         case Ok(m) => match body(nodes[1..], gs[1..], rs) {
-           case Ok(ms) => ms.merge(m)
-           case Err => Err
-         }
-         case Err => Err
-       }
-}
-
-function reconstruct(node : TraceNode, g : Prop, rs : RuleSet) : (res : Result<Match>)
+method reconstruct(node : TraceNode, g : Prop, rs : RuleSet) returns (res : Result<Match>)
   requires node.wf()
   ensures res.Ok? ==> res.val.thm.wf(rs)
 {
-  if node.i >= |rs| then Err
-  else match body(node.children, rs[node.i].body, rs) {
-         case Ok(ms) => match unify(g, node.prop) {
-           case Ok(goal_subst) => match merge_subst(goal_subst, ms.s) {
-             case Ok(s) => match mk_thm(rs, node.i, s, ms.args) {
-               case Ok(thm) => Ok(Match(s, thm))
-               case Err => Err
-             }
-             case Err => Err
-           }
-           case Err => Err
-         }
-         case Err => Err
-       }
+  // Which rule are we applying.
+  if node.i >= |rs| {
+    print "bad rule index\n";
+    return Err;
+  }
+  var r := rs[node.i];
+
+  // Reconstruct the rule body.
+  if |node.children| != |r.body| {
+    print "rule body length mismatch\n";
+    return Err;
+  }
+
+  var s: Subst := map[];
+  var args: seq<Thm> := [];
+  var i := 0;
+  while i < |r.body|
+    invariant forall j :: 0 <= j < |args| ==> args[j].wf(rs)
+  {
+    var subgoal := r.body[i];
+    var res := reconstruct(node.children[i], r.body[i], rs);
+    match res {
+      case Ok(m) => {
+        var maybe_subst := merge_subst(s, m.s);
+        match maybe_subst {
+          case Ok(subst) => s := subst;
+          case Err => {
+            print "failed to merge substitutions\n";
+            return Err;
+          }
+        }
+        args := args + [m.thm];
+      }
+      case Err => {
+        print "failed subgoal trace\n";
+        return Err;
+      }
+    }
+    i := i+1;
+  }
+
+  // Unify exit with goal.
+  //print "unify: g=", g, " exit=", exit.prop, "\n";
+  var goal_subst: Subst;
+  var maybe_subst := unify(g, node.prop);
+  match maybe_subst {
+    case Ok(subst) => {
+      goal_subst := subst;
+    }
+    case Err => {
+      print "failed to unify with exit\n";
+      return Err;
+    }
+  }
+
+  var maybe_merged := merge_subst(s, goal_subst);
+  match maybe_merged {
+    case Ok(merged) => s := merged;
+    case Err => {
+      print "failed to merge substitution\n";
+      return Err;
+    }
+  }
+
+  // Deduce theorem.
+  //print "mk_thm: i=", u.i, " s=", s, " args=", args, "\n";
+  var maybe_thm := mk_thm(rs, node.i, s, args);
+  match maybe_thm {
+    // TODO(mbm): trim down the subst?
+    case Ok(thm) => {
+      print "mk_thm: success\n";
+      return Ok(Match(goal_subst, thm));
+    }
+    case Err => {
+      print "failed to deduce thm\n";
+      return Err;
+    }
+  }
 }
 
 /*
@@ -678,6 +716,53 @@ function reconstruct(trace : Trace, rs : RuleSet, gs : Prop, bound : nat) : (res
          case Err => Err
        }
 }
+
+datatype Matches = Matches(s : Subst, args: seq<Thm>) {
+  ghost predicate wf(rs : RuleSet) { forall j :: 0 <= j < |args| ==> args[j].wf(rs) }
+
+  function merge(m : Match) : Result<Matches> {
+    match merge_subst(s, m.s) {
+      case Ok(sbst) => Ok(Matches(sbst, args + [m.thm]))
+      case Err => Err
+    }
+  }
+}
+
+function body(nodes : seq<TraceNode>, gs : seq<Prop>, rs : RuleSet) : (res : Result<Matches>)
+  requires forall i :: 0 <= i < |nodes| ==> nodes[i].wf()
+  ensures res.Ok? ==> res.val.wf(rs)
+{
+  if |nodes| != |gs| then Err
+  else if |gs| == 0 then Ok(Matches(map[], []))
+  else match reconstruct(nodes[0], gs[0], rs) {
+         case Ok(m) => match body(nodes[1..], gs[1..], rs) {
+           case Ok(ms) => ms.merge(m)
+           case Err => Err
+         }
+         case Err => Err
+       }
+}
+
+function reconstruct(node : TraceNode, g : Prop, rs : RuleSet) : (res : Result<Match>)
+  requires node.wf()
+  ensures res.Ok? ==> res.val.thm.wf(rs)
+{
+  if node.i >= |rs| then Err
+  else match body(node.children, rs[node.i].body, rs) {
+         case Ok(ms) => match unify(g, node.prop) {
+           case Ok(goal_subst) => match merge_subst(goal_subst, ms.s) {
+             case Ok(s) => match mk_thm(rs, node.i, s, ms.args) {
+               case Ok(thm) => Ok(Match(s, thm))
+               case Err => Err
+             }
+             case Err => Err
+           }
+           case Err => Err
+         }
+         case Err => Err
+       }
+}
+
 
 */
 
@@ -810,6 +895,8 @@ method run_trace_tree_build() {
     print "reconstruction error\n";
     return;
   }
+  print "thm = ", maybe_match.val.thm, "\n";
+  print "OK\n";
 }
 
 method run_trace_reconstruction() {
