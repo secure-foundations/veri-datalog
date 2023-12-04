@@ -470,10 +470,17 @@ datatype TraceNode = TraceNode(i : nat, prop : Prop, children : seq<TraceNode>) 
   }
 }
 
-datatype Outcome = Success(nodes : seq<TraceNode>) | Failure
+datatype Outcome = Success(nodes : seq<TraceNode>) | Failure {
+  predicate wf() {
+    match this {
+      case Success(nodes) => forall i :: 0 <= i < |nodes| ==> nodes[i].wf()
+      case Failure => true
+    }
+  }
+}
 
 method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (res : Result<(Outcome, Trace)>)
-  ensures res.Ok? ==> |res.val.1| <= |trace|
+  ensures res.Ok? ==> res.val.0.wf() && |res.val.1| <= |trace|
   decreases bound
 {
   if bound == 0 {
@@ -484,6 +491,7 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
   var nodes: seq<TraceNode> := [];
   var trace := trace;
   while |trace| > 0 && trace[0].level >= min_level
+    invariant forall i :: 0 <= i < |nodes| ==> nodes[i].wf()
     decreases |trace|
   {
     // 1. Collects all rules that might match by having a head with the same name and number of arguments
@@ -546,10 +554,15 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
     var exit := trace[0];
     trace := trace[1..];
     print "exit: ", exit, "\n";
+    if !exit.prop.concrete() {
+      print "non concrete exit\n";
+      return Err;
+    }
 
     match exit.port {
       case Exit => {
-        nodes := nodes + [TraceNode(unify.i, exit.prop, outcome.nodes)];
+        var node := TraceNode(unify.i, exit.prop, outcome.nodes);
+        nodes := nodes + [node];
         print "exit: success: add to nodes\n";
         continue;
       }
@@ -612,7 +625,6 @@ function reconstruct(node : TraceNode, g : Prop, rs : RuleSet) : (res : Result<M
          case Err => Err
        }
 }
-
 
 /*
 //// Incomplete experiment at a more functional style for trace reconstruction.
@@ -767,7 +779,10 @@ function connectivity_trace() : (trace : Trace)
 }
 
 method run_trace_tree_build() {
+  var rs := connectivity_rules();
   var trace := connectivity_trace();
+
+  // Build tree.
   var res := build_trace_tree(trace, 0, 0x1000_0000_0000);
   if res.Err? {
     print "error\n";
@@ -778,10 +793,22 @@ method run_trace_tree_build() {
     print "failure\n";
     return;
   }
+  if |outcome.nodes| == 0 {
+    print "no nodes";
+    return;
+  }
   var i := 0;
   while i < |outcome.nodes| {
     outcome.nodes[i].dump();
     i := i+1;
+  }
+
+  // Deduce theorem.
+  var root := outcome.nodes[0];
+  var maybe_match := reconstruct(root, root.prop, rs);
+  if maybe_match.Err? {
+    print "reconstruction error\n";
+    return;
   }
 }
 
