@@ -451,6 +451,11 @@ method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (r
 //// Trace tree construction.
 
 datatype TraceNode = TraceNode(i : nat, prop : Prop, children : seq<TraceNode>) {
+  predicate wf() {
+    prop.concrete()
+    && forall j :: 0 <= j < |children| ==> children[j].wf()
+  }
+
   method dump() {
     dump_indent("");
   }
@@ -561,6 +566,53 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
   }
   return Ok((Success(nodes), trace));
 }
+
+datatype Matches = Matches(s : Subst, args: seq<Thm>) {
+  ghost predicate wf(rs : RuleSet) { forall j :: 0 <= j < |args| ==> args[j].wf(rs) }
+
+  function merge(m : Match) : Result<Matches> {
+    match merge_subst(s, m.s) {
+      case Ok(sbst) => Ok(Matches(sbst, args + [m.thm]))
+      case Err => Err
+    }
+  }
+}
+
+function body(nodes : seq<TraceNode>, gs : seq<Prop>, rs : RuleSet) : (res : Result<Matches>)
+  requires forall i :: 0 <= i < |nodes| ==> nodes[i].wf()
+  ensures res.Ok? ==> res.val.wf(rs)
+{
+  if |nodes| != |gs| then Err
+  else if |gs| == 0 then Ok(Matches(map[], []))
+  else match reconstruct(nodes[0], gs[0], rs) {
+         case Ok(m) => match body(nodes[1..], gs[1..], rs) {
+           case Ok(ms) => ms.merge(m)
+           case Err => Err
+         }
+         case Err => Err
+       }
+}
+
+function reconstruct(node : TraceNode, g : Prop, rs : RuleSet) : (res : Result<Match>)
+  requires node.wf()
+  ensures res.Ok? ==> res.val.thm.wf(rs)
+{
+  if node.i >= |rs| then Err
+  else match body(node.children, rs[node.i].body, rs) {
+         case Ok(ms) => match unify(g, node.prop) {
+           case Ok(goal_subst) => match merge_subst(goal_subst, ms.s) {
+             case Ok(s) => match mk_thm(rs, node.i, s, ms.args) {
+               case Ok(thm) => Ok(Match(s, thm))
+               case Err => Err
+             }
+             case Err => Err
+           }
+           case Err => Err
+         }
+         case Err => Err
+       }
+}
+
 
 /*
 //// Incomplete experiment at a more functional style for trace reconstruction.
