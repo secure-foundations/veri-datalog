@@ -486,7 +486,6 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
   if bound == 0 {
     return Err;
   }
-  print "build_trace_tree: level ", min_level, "\n";
 
   var nodes: seq<TraceNode> := [];
   var trace := trace;
@@ -504,7 +503,6 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
     }
     var level := collect.level;
     trace := trace[1..];
-    print "collect: ", collect, "\n";
 
     // 2. Finds the next matching rule whose head can be unified with the predicate
     //      unify is traced with the results of unification if one is found.
@@ -520,14 +518,12 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
       return Err;
     }
     if unify.port == Fail {
-      print "failure: return\n";
       return Ok((Failure, trace));
     }
     if unify.port != Unify {
       print "expected: unify\n";
       return Err;
     }
-    print "unify: ", unify, "\n";
 
     // 3. Applies variable assignments from unification to clauses in the rule
     //    body and continues at #1 with the updated clauses.
@@ -539,7 +535,6 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
     var outcome := maybe_body.val.0;
     trace := maybe_body.val.1;
     if outcome.Failure? {
-      print "failure: continue\n";
       continue;
     }
 
@@ -553,7 +548,6 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
     }
     var exit := trace[0];
     trace := trace[1..];
-    print "exit: ", exit, "\n";
     if !exit.prop.concrete() {
       print "non concrete exit\n";
       return Err;
@@ -563,16 +557,13 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
       case Exit => {
         var node := TraceNode(unify.i, exit.prop, outcome.nodes);
         nodes := nodes + [node];
-        print "exit: success: add to nodes\n";
         continue;
       }
       case Fail => {
-        print "exit: fail\n";
         return Ok((Failure, trace));
       }
       case _ => {
         print "expected: exit or fail\n";
-        print exit, "\n";
         return Err;
       }
     }
@@ -626,7 +617,6 @@ method reconstruct(node : TraceNode, g : Prop, rs : RuleSet) returns (res : Resu
   }
 
   // Unify exit with goal.
-  //print "unify: g=", g, " exit=", exit.prop, "\n";
   var goal_subst: Subst;
   var maybe_subst := unify(g, node.prop);
   match maybe_subst {
@@ -649,12 +639,10 @@ method reconstruct(node : TraceNode, g : Prop, rs : RuleSet) returns (res : Resu
   }
 
   // Deduce theorem.
-  //print "mk_thm: i=", u.i, " s=", s, " args=", args, "\n";
   var maybe_thm := mk_thm(rs, node.i, s, args);
   match maybe_thm {
     // TODO(mbm): trim down the subst?
     case Ok(thm) => {
-      print "mk_thm: success\n";
       return Ok(Match(goal_subst, thm));
     }
     case Err => {
