@@ -24,26 +24,25 @@ namespace _module
     }
 
     public override object VisitFact(datalogParser.FactContext context) {
-      var head = (_IClause) VisitClause(context.clause());
-      var body = Dafny.Sequence<_IClause>.Empty;
+      var head = (_IProp) VisitClause(context.clause());
+      var body = Dafny.Sequence<_IProp>.Empty;
       return new _module.Rule(head, body);
     }
 
     public override object VisitRule(datalogParser.RuleContext context) {
-      var head = (_IClause) VisitClause(context.clause());
-      var body = (Dafny.ISequence<_IClause>) VisitClause_list(context.clause_list()); //new List<_module.Clause>();
-
+      var head = (_IProp) VisitClause(context.clause());
+      var body = (Dafny.ISequence<_IProp>) VisitClause_list(context.clause_list());
       return new _module.Rule(head, body);
     }
 
     public override object VisitClause(datalogParser.ClauseContext context) {
       var name = Sequence<char>.FromString(context.name.Text);
       var terms = (Dafny.ISequence<_ITerm>) VisitTerm_list(context.term_list());
-      return new _module.Clause(name, terms);
+      return new _module.Prop_App(name, terms);
     }
 
     public override object VisitConstant(datalogParser.ConstantContext context) {
-      return new Term_Const(Sequence<char>.FromString(context.val.Text));
+      return new Term_Const(new Const_Atom(Sequence<char>.FromString(context.val.Text)));
     }
 
     public override object VisitVariable(datalogParser.VariableContext context) {
@@ -51,13 +50,12 @@ namespace _module
     }
 
     public override object VisitClause_list(datalogParser.Clause_listContext context) {
-      var clauses = new List<_module.Clause>();
+      var props = new List<_module.Prop>();
       foreach (var clause in context.clause()) {
-        var dafny_clause = (_module.Clause) VisitClause(clause);
-        clauses.Add(dafny_clause);
+        var dafny_prop = (_module.Prop) VisitClause(clause);
+        props.Add(dafny_prop);
       }
-
-      return Sequence<_module.Clause>.Create(clauses.Count, i => clauses[(int) i]);
+      return Sequence<_module.Prop>.Create(props.Count, i => props[(int) i]);
     }
 
     public override object VisitTerm_list(datalogParser.Term_listContext context) {
@@ -66,16 +64,12 @@ namespace _module
         var dafny_term = (_module.Term)VisitTerm(term);
         terms.Add(dafny_term);
       }
-
       return Sequence<_module.Term>.Create(terms.Count, i => terms[(int) i]);
     }
-
   }
 
   public partial class __default
   {
-    
-  }
-  
 
+  }
 }

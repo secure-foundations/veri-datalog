@@ -900,14 +900,16 @@ method run_trace_reconstruction() {
   }
 }
 
+method run(rs : RuleSet) {
+  print(rs);
+  print("ok\n");
+}
+
+/*
 method Main() {
   run_trace_tree_build();
   // run_trace_reconstruction();
 }
-
-/*
-
-
 
 //// Extremely toy top-down ////
 
