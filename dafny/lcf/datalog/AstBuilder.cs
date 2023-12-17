@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using System.Collections.Generic;
 using System.Linq;
+using Antlr4.Runtime;
 using _System;
 using Dafny;
 
@@ -26,13 +27,17 @@ namespace _module
     public override object VisitFact(datalogParser.FactContext context) {
       var head = (_IProp) VisitClause(context.clause());
       var body = Dafny.Sequence<_IProp>.Empty;
-      return new _module.Rule(head, body);
+      return new _module.Rule(head, body, RuleID(context));
     }
 
     public override object VisitRule(datalogParser.RuleContext context) {
       var head = (_IProp) VisitClause(context.clause());
       var body = (Dafny.ISequence<_IProp>) VisitClause_list(context.clause_list());
-      return new _module.Rule(head, body);
+      return new _module.Rule(head, body, RuleID(context));
+    }
+
+    private static int RuleID(ParserRuleContext context) {
+      return context.Start.Line;
     }
 
     public override object VisitClause(datalogParser.ClauseContext context) {

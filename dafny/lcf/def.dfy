@@ -150,7 +150,7 @@ datatype Prop =
   }
 }
 
-datatype Rule = Rule(head : Prop, body : seq<Prop>) {
+datatype Rule = Rule(head : Prop, body : seq<Prop>, id : nat) {
   predicate complete_subst(s : Subst) {
     head.complete_subst(s) && (forall i :: 0 <= i < |body| ==> body[i].complete_subst(s))
   }
@@ -164,7 +164,7 @@ datatype Rule = Rule(head : Prop, body : seq<Prop>) {
     ensures res.concrete()
   {
     var body' := seq(|body|, i requires 0 <= i < |body| => body[i].subst(s));
-    Rule(head.subst(s), body')
+    Rule(head.subst(s), body', id)
   }
 
   predicate wf() {
@@ -231,7 +231,7 @@ function mk_thm(rs : RuleSet, i : nat, s : Subst, args : seq<Thm>) : (res : Resu
 }
 
 function tst_nat() : RuleSet {
-  [Rule(App("foo", [Var("x")]), [BuiltinOp(NatLeq, [Var("x"), Const(Nat(3))])])]
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(NatLeq, [Var("x"), Const(Nat(3))])], 0)]
 }
 
 function tst_nat_thm() : Result<Thm> {
@@ -241,7 +241,7 @@ function tst_nat_thm() : Result<Thm> {
 }
 
 function tst_sub_string() : RuleSet {
-  [Rule(App("foo", [Var("x")]), [BuiltinOp(SubString, [Const(Str("hello world!")), Const(Nat(6)), Const(Nat(5)), Const(Nat(1)), Var("x")])])]
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(SubString, [Const(Str("hello world!")), Const(Nat(6)), Const(Nat(5)), Const(Nat(1)), Var("x")])], 0)]
 }
 
 function tst_sub_string_thm() : Result<Thm> {
@@ -251,7 +251,7 @@ function tst_sub_string_thm() : Result<Thm> {
 }
 
 function tst_split_string() : RuleSet {
-  [Rule(App("foo", [Var("x")]), [BuiltinOp(SplitString, [Const(Str("a.b")), Const(Str(".")), Var("x")])])]
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(SplitString, [Const(Str("a.b")), Const(Str(".")), Var("x")])], 0)]
 }
 
 function tst_string_split_thm() : Result<Thm> {
@@ -263,7 +263,7 @@ function tst_string_split_thm() : Result<Thm> {
 }
 
 function tst_length() : RuleSet {
-  [Rule(App("foo", [Var("x")]), [BuiltinOp(Length, [Const(List([Nat(1), Nat(2), Nat(3)])), Var("x")])])]
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(Length, [Const(List([Nat(1), Nat(2), Nat(3)])), Var("x")])], 0)]
 }
 
 function tst_length_thm() : Result<Thm> {
@@ -273,7 +273,7 @@ function tst_length_thm() : Result<Thm> {
 }
 
 function tst_member() : RuleSet {
-  [Rule(App("foo", [Var("x")]), [BuiltinOp(Member, [Var("x"), Const(List([Nat(1), Nat(2), Nat(3)]))])])]
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(Member, [Var("x"), Const(List([Nat(1), Nat(2), Nat(3)]))])], 0)]
 }
 
 function tst_member_thm() : Result<Thm> {
@@ -283,7 +283,7 @@ function tst_member_thm() : Result<Thm> {
 }
 
 function tst_reverse() : RuleSet {
-  [Rule(App("foo", [Var("x")]), [BuiltinOp(Reverse, [Const(List([Nat(1), Nat(2), Nat(3)])), Var("x")])])]
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(Reverse, [Const(List([Nat(1), Nat(2), Nat(3)])), Var("x")])], 0)]
 }
 
 function tst_reverse_thm() : Result<Thm> {
@@ -756,8 +756,8 @@ function reconstruct(node : TraceNode, g : Prop, rs : RuleSet) : (res : Result<M
 
 */
 
-function mk_fact(head : string, args : seq<string>) : Rule {
-  Rule(App(head, seq(|args|, i requires 0 <= i < |args| => Const(Atom(args[i])))), [])
+function mk_fact(head : string, args : seq<string>, id : nat) : Rule {
+  Rule(App(head, seq(|args|, i requires 0 <= i < |args| => Const(Atom(args[i])))), [], id)
 }
 
 function connectivity_rules() : RuleSet {
@@ -765,12 +765,14 @@ function connectivity_rules() : RuleSet {
     // connected(A, B) :- edge(A, B).
     /*0*/Rule(
       App("connected", [Var("A"), Var("B")]),
-      [App("edge", [Var("A"), Var("B")])]
+      [App("edge", [Var("A"), Var("B")])],
+      0
     ),
     // connected(A, B) :- edge(A, M), connected(M, B).
     /*1*/Rule(
       App("connected", [Var("A"), Var("B")]),
-      [App("edge", [Var("A"), Var("M")]), App("connected", [Var("M"), Var("B")])]
+      [App("edge", [Var("A"), Var("M")]), App("connected", [Var("M"), Var("B")])],
+      1
     ),
     // query(S, D) :- source(S), destination(D), connected(S, D).
     /*2*/Rule(
@@ -779,20 +781,21 @@ function connectivity_rules() : RuleSet {
         App("source", [Var("S")]),
         App("destination", [Var("D")]),
         App("connected", [Var("S"), Var("D")])
-      ]
+      ],
+      2
     ),
 
     // edge("n1", "n3").
     // edge("n1", "n2").
     // edge("n0", "n1").
-    /*3*/mk_fact("edge", ["n1", "n3"]),
-    /*4*/mk_fact("edge", ["n1", "n2"]),
-    /*5*/mk_fact("edge", ["n0", "n1"]),
+    /*3*/mk_fact("edge", ["n1", "n3"], 3),
+    /*4*/mk_fact("edge", ["n1", "n2"], 4),
+    /*5*/mk_fact("edge", ["n0", "n1"], 5),
 
     // source("n0").
     // destination("n3").
-    /*6*/mk_fact("source", ["n0"]),
-    /*7*/mk_fact("destination", ["n3"])
+    /*6*/mk_fact("source", ["n0"], 6),
+    /*7*/mk_fact("destination", ["n3"], 7)
   ]
 }
 
@@ -901,7 +904,11 @@ method run_trace_reconstruction() {
 }
 
 method run(rs : RuleSet) {
-  print(rs);
+  var i := 0;
+  while i < |rs| {
+    print rs[i], "\n";
+    i := i+1;
+  }
   print("ok\n");
 }
 

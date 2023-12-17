@@ -25,7 +25,5 @@
       <Compile Include="..\out\datalogVisitor.cs">
         <Link>datalogVisitor.cs</Link>
       </Compile>
-      <Compile Remove="Util.cs" />
     </ItemGroup>
-
 </Project>
