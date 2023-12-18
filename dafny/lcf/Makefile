@@ -4,7 +4,7 @@ out/%.cs: datalog.g4
 	antlr -o out/ -Dlanguage=CSharp -no-listener -visitor datalog.g4
 
 def.cs: def.dfy
-	dafny translate --no-verify --unicode-char=false --include-runtime cs def.dfy
+	dafny translate --unicode-char=false --include-runtime cs def.dfy
 
 bin/datalog.dll: datalog/datalog.csproj out/datalogParser.cs def.cs datalog/AstBuilder.cs datalog/Program.cs
 	dotnet build datalog/datalog.csproj --output bin

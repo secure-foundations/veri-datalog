@@ -572,17 +572,36 @@ method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (re
   return Ok((Success(nodes), trace));
 }
 
+// Lookup rule with the given id.
+method lookup_rule(rs : RuleSet, id : nat) returns (res : Result<nat>)
+  ensures res.Ok? ==> res.val < |rs| && rs[res.val].id == id
+{
+  var i := 0;
+  while i < |rs| {
+    if rs[i].id == id {
+      return Ok(i);
+    }
+    i := i+1;
+  }
+  return Err;
+}
+
 // Derive a theorem from a trace tree node.
 method reconstruct(node : TraceNode, g : Prop, rs : RuleSet) returns (res : Result<Match>)
   requires node.wf()
   ensures res.Ok? ==> res.val.thm.wf(rs)
 {
   // Which rule are we applying.
-  if node.i >= |rs| {
-    print "bad rule index\n";
-    return Err;
+  var ri: nat;
+  var maybe_ri := lookup_rule(rs, node.i);
+  match maybe_ri {
+    case Ok(index) => ri := index;
+    case Err => {
+      print "could not find rule\n";
+      return Err;
+    }
   }
-  var r := rs[node.i];
+  var r := rs[ri];
 
   // Reconstruct the rule body.
   if |node.children| != |r.body| {
@@ -641,7 +660,7 @@ method reconstruct(node : TraceNode, g : Prop, rs : RuleSet) returns (res : Resu
   }
 
   // Deduce theorem.
-  var maybe_thm := mk_thm(rs, node.i, s, args);
+  var maybe_thm := mk_thm(rs, ri, s, args);
   match maybe_thm {
     // TODO(mbm): trim down the subst?
     case Ok(thm) => {
@@ -856,9 +875,41 @@ function connectivity_trace() : (trace : Trace)
   ]
 }
 
-method run_trace_tree_build() {
+method run_trace_reconstruction() {
   var rs := connectivity_rules();
   var trace := connectivity_trace();
+  var g := trace[0].prop;
+  var res := trace_call(rs, g, trace, 0x1000_0000_0000);
+  match res {
+    case Ok(thm) => print "ok\n";
+    case Err => print "FAIL\n";
+  }
+}
+
+method run_connectivity_example() {
+  var rs := connectivity_rules();
+  var trace := connectivity_trace();
+  run(rs, trace);
+}
+
+method run(rs : RuleSet, trace : Trace) {
+  // Dump rules.
+  print "rules:\n";
+  var i := 0;
+  while i < |rs| {
+    print rs[i], "\n";
+    i := i+1;
+  }
+  print "\n";
+
+  // Dump trace.
+  print "trace:\n";
+  i := 0;
+  while i < |trace| {
+    print trace[i], "\n";
+    i := i+1;
+  }
+  print "\n";
 
   // Build tree.
   var res := build_trace_tree(trace, 0, 0x1000_0000_0000);
@@ -875,11 +926,14 @@ method run_trace_tree_build() {
     print "no nodes";
     return;
   }
-  var i := 0;
+
+  print "tree:\n";
+  i := 0;
   while i < |outcome.nodes| {
     outcome.nodes[i].dump();
     i := i+1;
   }
+  print "\n";
 
   // Deduce theorem.
   var root := outcome.nodes[0];
@@ -888,35 +942,8 @@ method run_trace_tree_build() {
     print "reconstruction error\n";
     return;
   }
-  print "thm = ", maybe_match.val.thm, "\n";
+  print "thm: ", maybe_match.val.thm, "\n";
   print "OK\n";
-}
-
-method run_trace_reconstruction() {
-  var rs := connectivity_rules();
-  var trace := connectivity_trace();
-  var g := trace[0].prop;
-  var res := trace_call(rs, g, trace, 0x1000_0000_0000);
-  match res {
-    case Ok(thm) => print "ok\n";
-    case Err => print "FAIL\n";
-  }
-}
-
-method run(rs : RuleSet, trace : Trace) {
-  print "rules:\n";
-  var i := 0;
-  while i < |rs| {
-    print rs[i], "\n";
-    i := i+1;
-  }
-
-  print "trace:\n";
-  i := 0;
-  while i < |trace| {
-    print trace[i], "\n";
-    i := i+1;
-  }
 }
 
 /*
