@@ -10,6 +10,36 @@ namespace _module
 {
   internal class AstBuilder : datalogBaseVisitor<object>
   {
+    public override object VisitTrace(datalogParser.TraceContext context) {
+      var traceevents = new List<_module.Event>();
+      foreach (var traceevent in context.traceevent()) {
+        var dafny_event = (_module.Event)VisitTraceevent(traceevent);
+        traceevents.Add(dafny_event);
+      }
+      return Sequence<_module.Event>.Create(traceevents.Count, i => traceevents[(int) i]);
+    }
+
+    public override object VisitTraceevent(datalogParser.TraceeventContext context) {
+      var port = (_IPort) VisitPort(context.port());
+      var level = (BigInteger) VisitInteger(context.level);
+      var goal = (_IProp) VisitClause(context.goal);
+      var id = (BigInteger) VisitInteger(context.id);
+      return new _module.Event(port, level, goal, id);
+    }
+
+    public override object VisitPort(datalogParser.PortContext context) => context.name.Text switch {
+      "call" => new Port_Call(),
+      "redo" => new Port_Redo(),
+      "unify" => new Port_Unify(),
+      "exit" => new Port_Exit(),
+      "fail" => new Port_Fail(),
+      _ => throw new ArgumentOutOfRangeException("port", $"Unhandled port type {context.name.Text}"),
+    };
+
+    public override object VisitInteger(datalogParser.IntegerContext context) {
+      return BigInteger.Parse(context.numeral.Text);
+    }
+
     public override object VisitProgram(datalogParser.ProgramContext context) {
       var rules = new List<_module.Rule>();
       foreach (var fact in context.fact()) {
@@ -46,7 +76,7 @@ namespace _module
       return new _module.Prop_App(name, terms);
     }
 
-    public override object VisitConstant(datalogParser.ConstantContext context) {
+    public override object VisitAtom(datalogParser.AtomContext context) {
       return new Term_Const(new Const_Atom(Sequence<char>.FromString(context.val.Text)));
     }
 

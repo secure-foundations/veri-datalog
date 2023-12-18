@@ -27,10 +27,10 @@ prolog_trace_interception(Port, Frame, _Choice, continue) :-
     write("\t"),
     write(Goal),
 
-    nl.
+    writeln(";").
 
 :- visible(+all).
 :- leash(-all).
 :- include(connectivity).
-:- trace, query("n0", "n3"), notrace.
+:- trace, query(n0, n3), notrace.
 :- halt.

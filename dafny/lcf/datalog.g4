@@ -1,7 +1,27 @@
 grammar datalog;
 
 /*
- * Parser Rules
+ * Trace parser.
+ */
+
+trace
+  : traceevent+ EOF
+  ;
+
+traceevent
+  : port level=integer id=integer goal=clause ';'
+  ;
+
+port
+  : name=Port
+  ;
+
+integer
+  : numeral=Int
+  ;
+
+/*
+ * Datalog program parser.
  */
 
 program
@@ -10,18 +30,18 @@ program
 
 fact
   : clause '.'
-  ; 
+  ;
 
 rule
   : clause ':-' clause_list '.'
-  ; 
+  ;
 
-clause 
+clause
   : name=Identifier '(' term_list ')'
   ;
 
 term
-  : constant 
+  : atom
   | variable
   ;
 
@@ -33,11 +53,9 @@ term_list
   : term( ',' term)*
   ;
 
-constant
-  : '"' val=Identifier '"'
+atom
+  : val=Identifier
   ;
-
-
 
 variable
   : name=VarName
@@ -49,16 +67,21 @@ variable
 
 fragment ALPHANUMERIC: ALPHA | DIGIT ;
 fragment ALPHA: '_' | SMALL_LETTER | CAPITAL_LETTER ;
-fragment SMALL_LETTER: [a-z_];
+fragment LEADER: '_' | CAPITAL_LETTER;
+fragment SMALL_LETTER: [a-z];
 fragment CAPITAL_LETTER: [A-Z];
-DIGIT: [0-9] ;
+fragment DIGIT: [0-9];
+
+Port
+  : 'call' | 'redo' | 'unify' | 'exit' | 'fail'
+  ;
 
 Identifier
 	: SMALL_LETTER (Nondigit | Digit)*
 	;
 
 VarName
-  : CAPITAL_LETTER (Nondigit | Digit)*
+  : LEADER (Nondigit | Digit)*
   ;
 
 Int
@@ -72,11 +95,7 @@ fragment Nondigit
 fragment Digit
 	: [0-9]
 	;
-Single_string
-    : '\'' ~('\'')+ '\''
-    ;
 
 WS
 	: (' '|'\t'|'\n'|'\r'|'\r\n')+ -> skip
 	;
-

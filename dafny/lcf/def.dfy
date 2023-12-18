@@ -903,13 +903,20 @@ method run_trace_reconstruction() {
   }
 }
 
-method run(rs : RuleSet) {
+method run(rs : RuleSet, trace : Trace) {
+  print "rules:\n";
   var i := 0;
   while i < |rs| {
     print rs[i], "\n";
     i := i+1;
   }
-  print("ok\n");
+
+  print "trace:\n";
+  i := 0;
+  while i < |trace| {
+    print trace[i], "\n";
+    i := i+1;
+  }
 }
 
 /*
