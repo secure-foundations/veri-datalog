@@ -19,4 +19,5 @@ check: bin/datalog.dll examples/connectivity.pl examples/trace.out
 .PHONY: clean
 clean:
 	$(RM) -r out
+	$(RM) examples/*.out
 	$(RM) def.cs
