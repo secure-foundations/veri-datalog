@@ -328,125 +328,6 @@ function unify(r : Prop, g : Prop) : (res : Result<Subst>)
 
 datatype Match = Match(s : Subst, thm : Thm)
 
-function trace_expect(trace : Trace, port : Port) : (res : Result<(Event, Trace)>)
-{
-  if |trace| == 0 || trace[0].port != port then Err
-  else Ok((trace[0], trace[1..]))
-}
-
-method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (res : Result<(Match, Trace)>)
-  ensures res.Ok? ==> res.val.0.thm.wf(rs)
-  decreases bound // TODO(mbm): use |trace| to prove termination
-{
-  if bound == 0 {
-    print "exhausted bound\n";
-    return Err;
-  }
-
-  // Expect the first trace to be Unify.
-  // TODO(mbm): handle Call and Redo trace events
-  var maybe_next := trace_expect(trace, Unify);
-  if maybe_next.Err? {
-    return Err;
-  }
-  var u := maybe_next.val.0;
-  var trace := maybe_next.val.1;
-
-  // Unify port tells us which rule we are applying.
-  if u.i >= |rs| {
-    print "bad rule index\n";
-    return Err;
-  }
-  var r := rs[u.i];
-
-  // Expect to see traces for the rule body.
-  // NOTE: fragile assumption that the trace visits the rule body in the same order
-  var s: Subst := map[];
-  var args: seq<Thm> := [];
-  var i := 0;
-  while i < |r.body|
-    invariant forall j :: 0 <= j < |args| ==> args[j].wf(rs)
-  {
-    var subgoal := r.body[i];
-    var res := trace_call(rs, subgoal, trace, bound-1);
-    match res {
-      case Ok((m, rest)) => {
-        var maybe_subst := merge_subst(s, m.s);
-        match maybe_subst {
-          case Ok(subst) => s := subst;
-          case Err => {
-            print "failed to merge substitutions\n";
-            return Err;
-          }
-        }
-        args := args + [m.thm];
-        trace := rest;
-      }
-      case Err => {
-        print "failed subgoal trace\n";
-        return Err;
-      }
-    }
-    i := i+1;
-  }
-
-  // Exit.
-  // TODO(mbm): handle Fail and Redo
-  if |trace| == 0 {
-    print "empty trace\n";
-    return Err;
-  }
-
-  var exit := trace[0];
-  trace := trace[1..];
-  if exit.port != Exit {
-    print "unexpected trace port\n";
-    return Err;
-  }
-
-  if !exit.prop.concrete() {
-    print "expect concrete exit\n";
-    return Err;
-  }
-
-  // Unify exit with goal.
-  print "unify: g=", g, " exit=", exit.prop, "\n";
-  var goal_subst: Subst;
-  var maybe_subst := unify(g, exit.prop);
-  match maybe_subst {
-    case Ok(subst) => {
-      goal_subst := subst;
-    }
-    case Err => {
-      print "failed to unify with exit\n";
-      return Err;
-    }
-  }
-
-  var maybe_merged := merge_subst(s, goal_subst);
-  match maybe_merged {
-    case Ok(merged) => s := merged;
-    case Err => {
-      print "failed to merge substitution\n";
-      return Err;
-    }
-  }
-
-  // Deduce theorem.
-  print "mk_thm: i=", u.i, " s=", s, " args=", args, "\n";
-  var maybe_thm := mk_thm(rs, u.i, s, args);
-  match maybe_thm {
-    // TODO(mbm): trim down the subst?
-    case Ok(thm) => {
-      print "mk_thm: success\n";
-      return Ok((Match(goal_subst, thm), trace));
-    }
-    case Err => {
-      print "failed to deduce thm\n";
-      return Err;
-    }
-  }
-}
 
 //// Trace tree construction.
 
@@ -875,17 +756,6 @@ function connectivity_trace() : (trace : Trace)
   ]
 }
 
-method run_trace_reconstruction() {
-  var rs := connectivity_rules();
-  var trace := connectivity_trace();
-  var g := trace[0].prop;
-  var res := trace_call(rs, g, trace, 0x1000_0000_0000);
-  match res {
-    case Ok(thm) => print "ok\n";
-    case Err => print "FAIL\n";
-  }
-}
-
 method run_connectivity_example() {
   var rs := connectivity_rules();
   var trace := connectivity_trace();
@@ -1058,4 +928,140 @@ function bottom_up(rs : RuleSet, acc : seq<Thm>, bound : nat) : seq<Thm>
                 case Err => acc
                 case Ok(new_thm) => bottom_up(rs, [new_thm] + acc, bound - 1)
 }
+*/
+
+/*
+///// Obsolete attempt at trace reconstruction.
+
+function trace_expect(trace : Trace, port : Port) : (res : Result<(Event, Trace)>)
+{
+  if |trace| == 0 || trace[0].port != port then Err
+  else Ok((trace[0], trace[1..]))
+}
+
+method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (res : Result<(Match, Trace)>)
+  ensures res.Ok? ==> res.val.0.thm.wf(rs)
+  decreases bound // TODO(mbm): use |trace| to prove termination
+{
+  if bound == 0 {
+    print "exhausted bound\n";
+    return Err;
+  }
+
+  // Expect the first trace to be Unify.
+  // TODO(mbm): handle Call and Redo trace events
+  var maybe_next := trace_expect(trace, Unify);
+  if maybe_next.Err? {
+    return Err;
+  }
+  var u := maybe_next.val.0;
+  var trace := maybe_next.val.1;
+
+  // Unify port tells us which rule we are applying.
+  if u.i >= |rs| {
+    print "bad rule index\n";
+    return Err;
+  }
+  var r := rs[u.i];
+
+  // Expect to see traces for the rule body.
+  // NOTE: fragile assumption that the trace visits the rule body in the same order
+  var s: Subst := map[];
+  var args: seq<Thm> := [];
+  var i := 0;
+  while i < |r.body|
+    invariant forall j :: 0 <= j < |args| ==> args[j].wf(rs)
+  {
+    var subgoal := r.body[i];
+    var res := trace_call(rs, subgoal, trace, bound-1);
+    match res {
+      case Ok((m, rest)) => {
+        var maybe_subst := merge_subst(s, m.s);
+        match maybe_subst {
+          case Ok(subst) => s := subst;
+          case Err => {
+            print "failed to merge substitutions\n";
+            return Err;
+          }
+        }
+        args := args + [m.thm];
+        trace := rest;
+      }
+      case Err => {
+        print "failed subgoal trace\n";
+        return Err;
+      }
+    }
+    i := i+1;
+  }
+
+  // Exit.
+  // TODO(mbm): handle Fail and Redo
+  if |trace| == 0 {
+    print "empty trace\n";
+    return Err;
+  }
+
+  var exit := trace[0];
+  trace := trace[1..];
+  if exit.port != Exit {
+    print "unexpected trace port\n";
+    return Err;
+  }
+
+  if !exit.prop.concrete() {
+    print "expect concrete exit\n";
+    return Err;
+  }
+
+  // Unify exit with goal.
+  print "unify: g=", g, " exit=", exit.prop, "\n";
+  var goal_subst: Subst;
+  var maybe_subst := unify(g, exit.prop);
+  match maybe_subst {
+    case Ok(subst) => {
+      goal_subst := subst;
+    }
+    case Err => {
+      print "failed to unify with exit\n";
+      return Err;
+    }
+  }
+
+  var maybe_merged := merge_subst(s, goal_subst);
+  match maybe_merged {
+    case Ok(merged) => s := merged;
+    case Err => {
+      print "failed to merge substitution\n";
+      return Err;
+    }
+  }
+
+  // Deduce theorem.
+  print "mk_thm: i=", u.i, " s=", s, " args=", args, "\n";
+  var maybe_thm := mk_thm(rs, u.i, s, args);
+  match maybe_thm {
+    // TODO(mbm): trim down the subst?
+    case Ok(thm) => {
+      print "mk_thm: success\n";
+      return Ok((Match(goal_subst, thm), trace));
+    }
+    case Err => {
+      print "failed to deduce thm\n";
+      return Err;
+    }
+  }
+}
+
+method run_trace_reconstruction() {
+  var rs := connectivity_rules();
+  var trace := connectivity_trace();
+  var g := trace[0].prop;
+  var res := trace_call(rs, g, trace, 0x1000_0000_0000);
+  match res {
+    case Ok(thm) => print "ok\n";
+    case Err => print "FAIL\n";
+  }
+}
+
 */
