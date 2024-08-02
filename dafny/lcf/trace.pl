@@ -25,12 +25,10 @@ prolog_trace_interception(Port, Frame, _Choice, continue) :-
 
     prolog_frame_attribute(Frame, goal, Goal),
     write("\t"),
-    write(Goal),
+    writeq(Goal),
 
     writeln(";").
 
-:- visible(+all).
+:- visible(-all).
+:- visible(+exit).
 :- leash(-all).
-:- include(connectivity).
-:- trace, query(n0, n3), notrace.
-:- halt.

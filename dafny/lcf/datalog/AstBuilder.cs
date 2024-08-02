@@ -70,14 +70,96 @@ namespace _module
       return context.Start.Line;
     }
 
-    public override object VisitClause(datalogParser.ClauseContext context) {
-      var name = Sequence<char>.FromString(context.name.Text);
+    private static dynamic GetBuiltinFromString(string s) {
+      switch (s) {
+        case "split_string":
+          return new _module.Builtin_SplitString();
+        case "sub_string":
+          return new _module.Builtin_SubString();
+        case "string_lower":
+          return new _module.Builtin_StringLower();
+        case "string_chars":
+          return new _module.Builtin_StringChars();
+        case "length":
+          return new _module.Builtin_Length();
+        case "lists:member":
+        case "member":
+           return new _module.Builtin_Member();
+        case "lists:reverse":
+        case "reverse":
+           return new _module.Builtin_Reverse();
+        case "lists:nth1":
+        case "nth1":
+           return new _module.Builtin_Nth1();
+        default:
+          throw new Exception("Invalid builtin name");
+      }
+    }
+
+    public override object VisitBuiltin(datalogParser.BuiltinContext context) {
       var terms = (Dafny.ISequence<_ITerm>) VisitTerm_list(context.term_list());
-      return new _module.Prop_App(name, terms);
+      return new _module.Prop_BuiltinOp(GetBuiltinFromString(context.name.Text), terms);
+    }
+
+    public override object VisitExpression(datalogParser.ExpressionContext context) {
+      var left = (_module.Term)VisitTerm(context.left);
+      var right = (_module.Term)VisitTerm(context.right);
+      var terms = new List<_module.Term> { left, right };
+      var terms2 = (Dafny.ISequence<_ITerm>) Sequence<_module.Term>.Create(terms.Count, i => terms[(int) i]);
+      switch(context.name.Text) {
+        case "=<":
+          return new _module.Prop_BuiltinOp(new _module.Builtin_NatLeq(), terms2);
+        case ">=":
+          return new _module.Prop_BuiltinOp(new _module.Builtin_NatGeq(), terms2);
+        case "\\=":
+        case "=\\=":
+          return new _module.Prop_BuiltinOp(new _module.Builtin_NatNeq(), terms2);
+        case "<":
+          return new _module.Prop_BuiltinOp(new _module.Builtin_NatLt(), terms2);
+        case ">":
+          return new _module.Prop_BuiltinOp(new _module.Builtin_NatGt(), terms2);
+        case "=":
+        case "==":
+          return new _module.Prop_Eq(left, right);
+        default:
+          throw new Exception("Invalid builtin name");
+      }
+    }
+
+    public override object VisitApp(datalogParser.AppContext context) {
+      var name = Sequence<char>.FromString(context.name.Text);
+      if (context.term_list() == null ) {
+        var terms = new List<_module.Term>();
+        var terms2 = Sequence<_module.Term>.Create(terms.Count, i => terms[(int) i]);
+        return new _module.Prop_App(name, (Dafny.ISequence<_ITerm>) terms2);
+      } else {
+        var terms = (Dafny.ISequence<_ITerm>) VisitTerm_list(context.term_list());
+        return new _module.Prop_App(name, terms);
+      }
     }
 
     public override object VisitAtom(datalogParser.AtomContext context) {
       return new Term_Const(new Const_Atom(Sequence<char>.FromString(context.val.Text)));
+    }
+
+    public override object VisitNatural(datalogParser.NaturalContext context) {
+      return new Term_Const(new Const_Nat(BigInteger.Parse(context.numeral.Text)));
+    }
+
+    public override object VisitString(datalogParser.StringContext context) {
+      return new Term_Const(new Const_Str(Sequence<char>.FromString(context.s.Text
+        .Substring(1, context.s.Text.Length - 2)
+        .Replace("\\t", "\t")
+        .Replace("\\n", "\n")
+        .Replace("\\r", "\r")
+        .Replace("\\\"", "\"")
+        .Replace("\\\\", "\\")
+      )));
+      // A substring of the text is taken in order to remove the double quotes.
+    }
+
+    public override object VisitList(datalogParser.ListContext context) {
+      return new Term_Const(new Const_List( (Dafny.ISequence<_IConst>) VisitConstant_list(context.constant_list()) ));
     }
 
     public override object VisitVariable(datalogParser.VariableContext context) {
@@ -100,6 +182,15 @@ namespace _module
         terms.Add(dafny_term);
       }
       return Sequence<_module.Term>.Create(terms.Count, i => terms[(int) i]);
+    }
+
+    public override object VisitConstant_list(datalogParser.Constant_listContext context) {
+      var consts = new List<_module.Const>();
+      foreach (var constant in context.constant()) {
+        var dafny_const = (_module.Const) ((_module.Term_Const) VisitConstant(constant))._val;
+        consts.Add(dafny_const);
+      }
+      return Sequence<_module.Const>.Create(consts.Count, i => consts[(int) i]);
     }
   }
 

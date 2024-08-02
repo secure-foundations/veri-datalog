@@ -1,1 +1,5 @@
+# Compiled C# code
 *.dll
+# Test outputs
+*.trace
+*.thm

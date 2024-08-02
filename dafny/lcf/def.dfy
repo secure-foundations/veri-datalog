@@ -60,15 +60,36 @@ function string_join(sep : string, parts : seq<string>) : string {
   else parts[0] + sep + string_join(sep, parts[1..])
 }
 
-datatype Builtin = NatLeq | NatGeq | NatNeq | SubString | SplitString | Length | Member | Reverse {
+function atom_strings(consts : seq<Const>) : Result<seq<string>> {
+  if forall i :: 0 <= i < |consts| ==> consts[i].Atom? then
+    Ok(seq(|consts|, i requires 0 <= i < |consts| => consts[i].val))
+  else Err
+}
+
+function lower_char(c : char) : char {
+  var i := c as int;
+  if 65 <= i <= 90 then ((i + 32) as char) else c
+}
+
+function lower_string(s : string) : string {
+  if |s| == 0 then s
+  else if |s| == 1 then [lower_char(s[0])]
+  else [lower_char(s[0])] + lower_string(s[1..])
+}
+
+datatype Builtin = NatLeq | NatGeq | NatNeq | NatLt | NatGt | SubString | StringLower | SplitString | StringChars | Length | Member | Reverse | Nth1 {
   predicate valid(args : seq<Const>) {
     match this {
-      case NatLeq | NatGeq | NatNeq => |args| == 2 && args[0].Nat? && args[1].Nat?
+      case NatLeq | NatGeq | NatNeq | NatLt | NatGt => |args| == 2 && args[0].Nat? && args[1].Nat?
       case SubString => |args| == 5 && args[0].Str? && args[1].Nat? && args[2].Nat? && args[3].Nat? && args[4].Str?
-      case SplitString => |args| == 3 && args[0].Str? && args[1].Str? && args[2].List?
+      case StringLower => |args| == 2 && args[0].Str? && args[1].Str?
+      case SplitString => |args| == 4 && args[0].Str? && args[1].Str? && args[2].Str? && args[3].List?
+        && args[2].s == "" // TODO: add support for padding (this line rejects any predicates that attempt to use the padding feature)
+      case StringChars => |args| == 2 && args[0].Str? && args[1].List?
       case Length => |args| == 2 && args[0].List? && args[1].Nat?
       case Member => |args| == 2 && args[1].List?
       case Reverse => |args| == 2 && args[0].List? && args[1].List?
+      case Nth1 => |args| == 3 && args[0].Nat? && args[1].List? && |args[1].l| > 0 && args[0].i > 0 && args[0].i <= |args[1].l|
     }
   }
 
@@ -76,18 +97,27 @@ datatype Builtin = NatLeq | NatGeq | NatNeq | SubString | SplitString | Length |
     requires valid(args)
   {
     match this {
-      case NatGeq => args[0].i <= args[1].i
-      case NatLeq => args[0].i >= args[1].i
+      case NatGeq => args[0].i >= args[1].i
+      case NatLeq => args[0].i <= args[1].i
       case NatNeq => args[0].i != args[1].i
+      case NatLt => args[0].i < args[1].i
+      case NatGt => args[0].i > args[1].i
       case SubString => (
         var str, before, len, after, sub := args[0], args[1], args[2], args[3], args[4];
         before.i+len.i+after.i == |str.s| &&
         str.s[before.i..before.i + len.i] == sub.s
       )
+      case StringLower => lower_string(args[0].s) == args[1].s
       case SplitString => (
-        var str, sep, parts := args[0], args[1], args[2];
+        var str, sep, pad, parts := args[0], args[1], args[2], args[3];
         match strings(parts.l) {
-          case Ok(parts_strings) => str.s == string_join(sep.s, parts_strings)
+          case Ok(parts_strings) => str.s == string_join(sep.s, parts_strings) // TODO: add support for padding
+          case Err => false
+        }
+      )
+      case StringChars => (
+        match atom_strings(args[1].l) {
+          case Ok(parts_strings) => args[0].s == string_join("", parts_strings)
           case Err => false
         }
       )
@@ -104,6 +134,7 @@ datatype Builtin = NatLeq | NatGeq | NatNeq | SubString | SplitString | Length |
         |l.l| == |r.l| &&
         forall i :: 0 <= i < |l.l| ==> l.l[i] == r.l[|l.l|-1-i]
       )
+      case Nth1 => args[1].l[args[0].i-1] == args[2]
     }
   }
 }
@@ -251,11 +282,11 @@ function tst_sub_string_thm() : Result<Thm> {
 }
 
 function tst_split_string() : RuleSet {
-  [Rule(App("foo", [Var("x")]), [BuiltinOp(SplitString, [Const(Str("a.b")), Const(Str(".")), Var("x")])], 0)]
+  [Rule(App("foo", [Var("x")]), [BuiltinOp(SplitString, [Const(Str("a.b")), Const(Str(".")), Const(Str("")), Var("x")])], 0)]
 }
 
 function tst_string_split_thm() : Result<Thm> {
-  var prop := BuiltinOp(SplitString, [Const(Str("a.b")), Const(Str(".")), Const( List( [Str("a"), Str("b")]))]);
+  var prop := BuiltinOp(SplitString, [Const(Str("a.b")), Const(Str(".")), Const(Str("")), Const( List( [Str("a"), Str("b")]))]);
   assert prop.valid();
   var lf := mk_leaf(prop).val;
   var s : Subst := map["x" :=  List([Str("a"), Str("b")])];
@@ -323,134 +354,161 @@ function unify(r : Prop, g : Prop) : (res : Result<Subst>)
   match (r, g)
   case (App(f1, args1), App(f2, args2)) =>
     if f1 == f2 then unify_terms(args1, args2) else Err
+  case (BuiltinOp(f1, args1), BuiltinOp(f2, args2)) =>
+    if f1 == f2 then unify_terms(args1, args2) else Err
+  case (Eq(left1, right1), Eq(left2, right2)) => (
+    var x := unify_terms([left1], [left2]);
+    var y := unify_terms([right1], [right2]);
+    match (x, y)
+    case (Ok(xval), Ok(yval)) => merge_subst(xval, yval)
+    case _ => Err
+  )
   case _ => Err
 }
 
-datatype Match = Match(s : Subst, thm : Thm)
-
-
-//// Trace tree construction.
-
-datatype TraceNode = TraceNode(i : nat, prop : Prop, children : seq<TraceNode>) {
-  predicate wf() {
-    prop.concrete()
-    && forall j :: 0 <= j < |children| ==> children[j].wf()
+method print_event(e: Event) {
+  var j := e.level;
+  while j > 11 {
+    print "  ";
+    j := j - 1;
   }
-
-  method dump() {
-    dump_indent("");
-  }
-
-  method dump_indent(indent : string) {
-    print indent, "rule=", i, " prop=", prop, "\n";
-    var i := 0;
-    while i < |children| {
-      children[i].dump_indent(indent+"  ");
-      i := i + 1;
-    }
-  }
+  print e.prop;
+  print "\n";
 }
 
-datatype Outcome = Success(nodes : seq<TraceNode>) | Failure {
-  predicate wf() {
-    match this {
-      case Success(nodes) => forall i :: 0 <= i < |nodes| ==> nodes[i].wf()
-      case Failure => true
-    }
-  }
-}
-
-// Process a sequence of trace events into a trace tree of the successful search path.
-method build_trace_tree(trace : Trace, min_level : nat, bound : nat) returns (res : Result<(Outcome, Trace)>)
-  ensures res.Ok? ==> res.val.0.wf() && |res.val.1| <= |trace|
-  decreases bound
+/*
+ * This method takes the trace output of a program and that program's rules, and then returns
+ * a proof of the correctness of that program.
+ */
+method build_proof_tree(trace: Trace, rs: RuleSet) returns (res : Result<(Thm, Trace)>)
+  requires forall j :: 0 <= j < |trace| ==> trace[j].prop.concrete()
+  requires |trace| > 0
+  ensures res.Ok? ==> forall j :: 0 <= j < |res.val.1| ==> res.val.1[j].prop.concrete()
+  ensures res.Ok? ==> |res.val.1| <= |trace|
+  ensures res.Ok? ==> res.val.0.wf(rs)
+  decreases |trace|
 {
-  if bound == 0 {
-    return Err;
+  // Here, the last element of the trace is popped and stored in head.
+  var trace' := trace;
+  var head := trace'[|trace'|-1];
+  trace' := trace'[..|trace'|-1];
+
+  match head.prop {
+    case Eq(l, r) => {
+      var maybe_leaf := mk_leaf(Eq(l, r));
+      match maybe_leaf {
+        case Ok(thm) => {
+          print_event(head); // for debugging
+          return Ok((thm, trace'));
+        }
+        case Err => {
+          print "failed to deduce eq\n";
+          return Err;
+        }
+      }
+    }
+    case BuiltinOp(b, args) => {
+      var maybe_leaf := mk_leaf(BuiltinOp(b, args));
+      match maybe_leaf {
+        case Ok(thm) => {
+          print_event(head); // for debugging
+          return Ok((thm, trace'));
+        }
+        case Err => {
+          print "failed to deduce builtin\n";
+          return Err;
+        }
+      }
+    }
+    case App(_, _) => { // This triggers if head's prop is a fact or a non-builtin predicate.
+      // The rule used by the prop is stored.
+      var ri: nat;
+      var maybe_ri := lookup_rule(rs, head.i);
+      match maybe_ri {
+        case Ok(index) => ri := index;
+        case Err => {
+          print "could not find rule\n";
+          return Err;
+        }
+      }
+      var r := rs[ri];
+
+      var args: seq<Thm> := []; // `args` holds the child theorems of this part of the proof tree.
+      var assignment := map[]; // `assignment` is the substitution used for holding the variable assignment at this part of the proof tree.
+      // Here, the variable information that can be determined directly from the prop is stored in `assignment`.
+      var maybe_assignment := unify(r.head, head.prop);
+      match maybe_assignment {
+        case Ok(substitution) => assignment := substitution;
+        case Err => {
+          print "could not create assignment\n";
+          return Err;
+        }
+      }
+
+      // The program loops through the rule's children in the search for trace events that match with them.
+      for i := |r.body| downto 0
+        invariant forall j :: 0 <= j < |trace'| ==> trace'[j].prop.concrete()
+        invariant |trace'| < |trace|
+        invariant forall j :: 0 <= j < |args| ==> args[j].wf(rs)
+      {
+        // This while loop skips over all ineligble trace events until it finds one that matches with the next child rule.
+        while |trace'| > 0
+          invariant forall j :: 0 <= j < |trace'| ==> trace'[j].prop.concrete()
+          invariant |trace'| < |trace|
+          decreases |trace'|
+        {
+          if trace'[|trace'|-1].level != head.level + 1 {
+            trace' := trace'[..|trace'|-1];
+            continue;
+          }
+          var new_subst := map[];
+          var maybe_new_subst := unify(r.body[i], trace'[|trace'|-1].prop);
+          match maybe_new_subst {
+            case Ok(substitution) => new_subst := substitution;
+            case Err => {
+              trace' := trace'[..|trace'|-1];
+              continue;
+            }
+          }
+          var maybe_assignment := merge_subst(assignment, new_subst);
+          match maybe_assignment {
+            case Ok(substitution) => assignment := substitution;
+            case Err => {
+              trace' := trace'[..|trace'|-1];
+              continue;
+            }
+          }
+          break;
+        }
+        if |trace'| == 0 {
+          print "trace consumed earlier than expected\n";
+          return Err;
+        }
+
+        // The succesfully matched trace event is used to create a sub proof tree.
+        var res := build_proof_tree(trace', rs);
+        if res.Err? {
+          print "error\n";
+          return Err;
+        }
+        trace' := res.val.1; // The trace is updated to reflect the popping of elements inside the recursion.
+        args := [res.val.0] + args; // The sub proof tree is stored in this list.
+      }
+
+      // The proof trees from the children are used to make the proof for this part of the tree.
+      var maybe_thm := mk_thm(rs, ri, assignment, args);
+      match maybe_thm {
+        case Ok(thm) => {
+          print_event(head); // for debugging
+          return Ok((thm, trace'));
+        }
+        case Err => {
+          print "failed to deduce thm\n";
+          return Err;
+        }
+      }
+    }
   }
-
-  var nodes: seq<TraceNode> := [];
-  var trace := trace;
-  while |trace| > 0 && trace[0].level >= min_level
-    invariant forall i :: 0 <= i < |nodes| ==> nodes[i].wf()
-    decreases |trace|
-  {
-    // 1. Collects all rules that might match by having a head with the same name and number of arguments
-    //      call is traced, once, if any rules might match.
-    //      redo is also traced when the engine backtracks to find the next matching rule.
-    var collect := trace[0];
-    if collect.port != Call && collect.port != Redo {
-      print "expected: call or redo\n";
-      return Err;
-    }
-    var level := collect.level;
-    trace := trace[1..];
-
-    // 2. Finds the next matching rule whose head can be unified with the predicate
-    //      unify is traced with the results of unification if one is found.
-    //      fail is traced if no rule heads can be unified.
-    if |trace| == 0 {
-      print "unexpected end of trace\n";
-      return Err;
-    }
-    var unify := trace[0];
-    trace := trace[1..];
-    if unify.level != level {
-      print "level mismatch\n";
-      return Err;
-    }
-    if unify.port == Fail {
-      return Ok((Failure, trace));
-    }
-    if unify.port != Unify {
-      print "expected: unify\n";
-      return Err;
-    }
-
-    // 3. Applies variable assignments from unification to clauses in the rule
-    //    body and continues at #1 with the updated clauses.
-    var maybe_body := build_trace_tree(trace, level+1, bound-1);
-    if maybe_body.Err? {
-      print "recursion error\n";
-      return Err;
-    }
-    var outcome := maybe_body.val.0;
-    trace := maybe_body.val.1;
-    if outcome.Failure? {
-      continue;
-    }
-
-    // 4. After all of the body clauses of the matched rule have either succeeded, failed, or thrown an exception:
-    //      exit is traced if all of them succeeded (meaning this rule is true).
-    //      fail is traced if any of them failed (meaning this rule is false).
-    //      exception is traced if any of them threw an exception.
-    if |trace| == 0 {
-      print "unexpected end of trace\n";
-      return Err;
-    }
-    var exit := trace[0];
-    trace := trace[1..];
-    if !exit.prop.concrete() {
-      print "non concrete exit\n";
-      return Err;
-    }
-
-    match exit.port {
-      case Exit => {
-        var node := TraceNode(unify.i, exit.prop, outcome.nodes);
-        nodes := nodes + [node];
-        continue;
-      }
-      case Fail => {
-        return Ok((Failure, trace));
-      }
-      case _ => {
-        print "expected: exit or fail\n";
-        return Err;
-      }
-    }
-  }
-  return Ok((Success(nodes), trace));
 }
 
 // Lookup rule with the given id.
@@ -466,195 +524,6 @@ method lookup_rule(rs : RuleSet, id : nat) returns (res : Result<nat>)
   }
   return Err;
 }
-
-// Derive a theorem from a trace tree node.
-method reconstruct(node : TraceNode, g : Prop, rs : RuleSet) returns (res : Result<Match>)
-  requires node.wf()
-  ensures res.Ok? ==> res.val.thm.wf(rs)
-{
-  // Which rule are we applying.
-  var ri: nat;
-  var maybe_ri := lookup_rule(rs, node.i);
-  match maybe_ri {
-    case Ok(index) => ri := index;
-    case Err => {
-      print "could not find rule\n";
-      return Err;
-    }
-  }
-  var r := rs[ri];
-
-  // Reconstruct the rule body.
-  if |node.children| != |r.body| {
-    print "rule body length mismatch\n";
-    return Err;
-  }
-
-  var s: Subst := map[];
-  var args: seq<Thm> := [];
-  var i := 0;
-  while i < |r.body|
-    invariant forall j :: 0 <= j < |args| ==> args[j].wf(rs)
-  {
-    var subgoal := r.body[i];
-    var res := reconstruct(node.children[i], r.body[i], rs);
-    match res {
-      case Ok(m) => {
-        var maybe_subst := merge_subst(s, m.s);
-        match maybe_subst {
-          case Ok(subst) => s := subst;
-          case Err => {
-            print "failed to merge substitutions\n";
-            return Err;
-          }
-        }
-        args := args + [m.thm];
-      }
-      case Err => {
-        print "failed subgoal trace\n";
-        return Err;
-      }
-    }
-    i := i+1;
-  }
-
-  // Unify exit with goal.
-  var goal_subst: Subst;
-  var maybe_subst := unify(g, node.prop);
-  match maybe_subst {
-    case Ok(subst) => {
-      goal_subst := subst;
-    }
-    case Err => {
-      print "failed to unify with exit\n";
-      return Err;
-    }
-  }
-
-  var maybe_merged := merge_subst(s, goal_subst);
-  match maybe_merged {
-    case Ok(merged) => s := merged;
-    case Err => {
-      print "failed to merge substitution\n";
-      return Err;
-    }
-  }
-
-  // Deduce theorem.
-  var maybe_thm := mk_thm(rs, ri, s, args);
-  match maybe_thm {
-    // TODO(mbm): trim down the subst?
-    case Ok(thm) => {
-      return Ok(Match(goal_subst, thm));
-    }
-    case Err => {
-      print "failed to deduce thm\n";
-      return Err;
-    }
-  }
-}
-
-/*
-//// Incomplete experiment at a more functional style for trace reconstruction.
-
-function pop(trace : Trace, port : Port) : (res : Result<(Event, Trace)>)
-{
-  if |trace| == 0 || trace[0].port != port then Err
-  else Ok((trace[0], trace[1..]))
-}
-
-datatype Matches = Matches(s : Subst, args: seq<Thm>) {
-  function merge(m : Match) : Result<Matches> {
-    match merge_subst(s, m.s) {
-      case Ok(sbst) => Ok(Matches(sbst, args + [m.thm]))
-      case Err => Err
-    }
-  }
-}
-
-function body(trace : Trace, rs : RuleSet, gs : seq<Prop>, bound : nat) : (res : Result<(Matches, Trace)>)
-  decreases bound, 0
-{
-  if bound == 0 then Err
-  else if |gs| == 0 then Ok((Matches(map[], []), trace))
-  else match reconstruct(trace, rs, gs[0], bound-1) {
-         case Ok((m, rest)) => match body(rest, rs, gs[1..], bound-1) {
-           case Ok((ms, rest)) => match ms.merge(m) {
-             case Ok(merged) => Ok((merged, rest))
-             case Err => Err
-           }
-           case Err => Err
-         }
-         case Err => Err
-       }
-}
-
-function reconstruct(trace : Trace, rs : RuleSet, gs : Prop, bound : nat) : (res : Result<(Match, Trace)>)
-  decreases bound, 1
-{
-  if bound == 0 then Err
-  else match pop(trace, Unify) {
-         case Ok((u, rest)) =>
-           if u.i >= |rs| then Err // TODO: require this property
-           else match body(rest, rs, rs[u.i].body, bound-1) {
-                  case Ok((ms, rest)) => match pop(rest, Exit) {
-                    case Ok((e, rest)) => Err
-                    case Err => Err
-                  }
-                  case Err => Err
-                }
-         case Err => Err
-       }
-}
-
-datatype Matches = Matches(s : Subst, args: seq<Thm>) {
-  ghost predicate wf(rs : RuleSet) { forall j :: 0 <= j < |args| ==> args[j].wf(rs) }
-
-  function merge(m : Match) : Result<Matches> {
-    match merge_subst(s, m.s) {
-      case Ok(sbst) => Ok(Matches(sbst, args + [m.thm]))
-      case Err => Err
-    }
-  }
-}
-
-function body(nodes : seq<TraceNode>, gs : seq<Prop>, rs : RuleSet) : (res : Result<Matches>)
-  requires forall i :: 0 <= i < |nodes| ==> nodes[i].wf()
-  ensures res.Ok? ==> res.val.wf(rs)
-{
-  if |nodes| != |gs| then Err
-  else if |gs| == 0 then Ok(Matches(map[], []))
-  else match reconstruct(nodes[0], gs[0], rs) {
-         case Ok(m) => match body(nodes[1..], gs[1..], rs) {
-           case Ok(ms) => ms.merge(m)
-           case Err => Err
-         }
-         case Err => Err
-       }
-}
-
-function reconstruct(node : TraceNode, g : Prop, rs : RuleSet) : (res : Result<Match>)
-  requires node.wf()
-  ensures res.Ok? ==> res.val.thm.wf(rs)
-{
-  if node.i >= |rs| then Err
-  else match body(node.children, rs[node.i].body, rs) {
-         case Ok(ms) => match unify(g, node.prop) {
-           case Ok(goal_subst) => match merge_subst(goal_subst, ms.s) {
-             case Ok(s) => match mk_thm(rs, node.i, s, ms.args) {
-               case Ok(thm) => Ok(Match(s, thm))
-               case Err => Err
-             }
-             case Err => Err
-           }
-           case Err => Err
-         }
-         case Err => Err
-       }
-}
-
-
-*/
 
 function mk_fact(head : string, args : seq<string>, id : nat) : Rule {
   Rule(App(head, seq(|args|, i requires 0 <= i < |args| => Const(Atom(args[i])))), [], id)
@@ -781,287 +650,22 @@ method run(rs : RuleSet, trace : Trace) {
   }
   print "\n";
 
-  // Build tree.
-  var res := build_trace_tree(trace, 0, 0x1000_0000_0000);
-  if res.Err? {
-    print "error\n";
-    return;
-  }
-  var outcome := res.val.0;
-  if outcome.Failure? {
-    print "failure\n";
-    return;
-  }
-  if |outcome.nodes| == 0 {
-    print "no nodes";
-    return;
-  }
-
-  print "tree:\n";
-  i := 0;
-  while i < |outcome.nodes| {
-    outcome.nodes[i].dump();
-    i := i+1;
-  }
-  print "\n";
-
   // Deduce theorem.
-  var root := outcome.nodes[0];
-  var maybe_match := reconstruct(root, root.prop, rs);
+  if |trace| == 0 {
+    print "There is no trace because it did not succeed.\n";
+    return;
+  }
+  if !(forall j :: 0 <= j < |trace| ==> trace[j].prop.concrete()) {
+    print "The trace is not entirely concrete.\n";
+    return;
+  }
+  print "tree:\n"; // if there was a flag that disabled printing in build_proof_tree, this line should be disabled as well
+  var maybe_match := build_proof_tree(trace, rs);
+  print "\n"; // if there was a flag that disabled printing in build_proof_tree, this line should be disabled as well
   if maybe_match.Err? {
     print "reconstruction error\n";
     return;
   }
-  print "thm: ", maybe_match.val.thm, "\n";
+  print "thm: ", maybe_match.val.0, "\n";
   print "OK\n";
 }
-
-/*
-method Main() {
-  run_trace_tree_build();
-  // run_trace_reconstruction();
-}
-
-//// Extremely toy top-down ////
-
-function collect_result<A>(xs : seq<Result<A>>) : (res:Result<seq<A>>)
-    ensures res.Ok? ==> |res.val| == |xs| && forall j :: 0 <= j < |xs| ==> xs[j].Ok? && res.val[j] == xs[j].val
-    {
-        if xs == [] then Ok([]) else
-        if xs[0].Ok? then
-            match collect_result(xs[1..])
-                case Ok(ys) => Ok([xs[0].val] + ys)
-                case Err => Err
-        else Err
-    }
-
-function unify_vars(s : seq<string>, t : seq<string>) : (res : Result<map<string, string>>)
-    ensures res.Ok? ==> |s| == |t| && forall i :: 0 <= i < |s| ==> s[i] in res.val && res.val[s[i]] == t[i]
-{
-    if |s| != |t| then Err else
-    if s == [] then Ok(map[]) else
-        match unify_vars(s[1..], t[1..])
-            case Err => Err
-            case Ok(sbst) =>
-                if (s[0] !in sbst) || (sbst[s[0]] == t[0]) then
-                    Ok(sbst[s[0] := t[0]])
-                else Err
-}
-
-function unify(r : Prop, g : Prop) : (res : Result<Subst>)
-    ensures res.Ok? ==> r.complete_subst(res.val) && r.subst(res.val) == g
-    {
-        match (r, g)
-            case (Const(v1), Const(v2)) => if v1 == v2 then Ok(map[]) else Err
-            case (App(f1, args1), App(f2, args2)) =>
-                if f1 == f2 then
-                    match unify_vars(args1, args2)
-                        case Ok(s) =>
-                            assert seq(|args1|, i requires 0 <= i < |args1| => s[args1[i]]) == args2;
-                            Ok(s)
-                        case Err => Err
-                else Err
-            case _ => Err
-    }
-
-function find_unify(rs : RuleSet, goal : Prop) : (res:Result<(nat, Subst)>)
-    ensures res.Ok? ==> res.val.0 < |rs| && unify(rs[res.val.0].head, goal) == Ok(res.val.1)
-    {
-        if rs == [] then Err else
-        match unify(rs[0].head, goal)
-            case Err =>
-                (match find_unify(rs[1..], goal)
-                    case Err => Err
-                    case Ok((i, s)) => Ok((i+1, s))
-                )
-            case Ok(res) => Ok((0,res))
-    }
-
-
-
-// TODO:
-// - only tries the first matching rule it finds
-// - only works on rules without existential quantification (e.g., more variables in the body)
-// - does not memoize subgoals
-function top_down(rs : RuleSet, goal : Prop, bound : nat) : (res:Result<Thm>)
-    ensures res.Ok? ==> res.val.wf(rs) && res.val.val == goal
-
-    decreases bound {
-        if bound == 0 then Err else
-        // Find a rule that unifies with the goal; obtain rule index i, substitution s
-        match find_unify(rs, goal)
-            case Err => Err
-            case Ok((i, s)) =>
-                var rule := rs[i];
-                // If the substitution s is actually good for the _entire_ rule,
-                if rule.complete_subst(s) then
-                    // Call top_down recursively on the rule arguments; fail if top down fails on any of them
-                    var arg_thms_result := collect_result(seq(|rule.body|, j requires 0 <= j < |rule.body| =>
-                        var subgoal := rule.subst(s).body[j];
-                        top_down(rs, subgoal, bound-1)
-                    ));
-                    if arg_thms_result.Ok? then
-                        // We have actually proven that mk_thm will now succeed; get the theorem and return it
-                        Ok(mk_thm(rs, i, s, arg_thms_result.val).val)
-                    else Err
-                else Err
-
-}
-
-///// Also works bottom up //////
-
-function find_new_subst(rs : RuleSet, thms : seq<Thm>) : (res : Result<(nat, Subst, seq<Thm>)>)
-    requires forall i :: 0 <= i < |thms| ==> thms[i].wf(rs)
-    ensures res.Ok? ==>
-        res.val.0 < |rs| &&
-        forall j :: 0 <= j < |res.val.2| ==> res.val.2[j].wf(rs)
-
-function bottom_up(rs : RuleSet, acc : seq<Thm>, bound : nat) : seq<Thm>
-    requires forall i :: 0 <= i < |acc| ==> acc[i].wf(rs)
-    decreases bound
-{
-    if bound == 0 then acc else
-        match find_new_subst(rs, acc)
-            case Err => acc
-            case Ok((i, s, args)) =>
-            match mk_thm(rs, i, s, args)
-                case Err => acc
-                case Ok(new_thm) => bottom_up(rs, [new_thm] + acc, bound - 1)
-}
-*/
-
-/*
-///// Obsolete attempt at trace reconstruction.
-
-function trace_expect(trace : Trace, port : Port) : (res : Result<(Event, Trace)>)
-{
-  if |trace| == 0 || trace[0].port != port then Err
-  else Ok((trace[0], trace[1..]))
-}
-
-method trace_call(rs : RuleSet, g : Prop, trace : Trace, bound : nat) returns (res : Result<(Match, Trace)>)
-  ensures res.Ok? ==> res.val.0.thm.wf(rs)
-  decreases bound // TODO(mbm): use |trace| to prove termination
-{
-  if bound == 0 {
-    print "exhausted bound\n";
-    return Err;
-  }
-
-  // Expect the first trace to be Unify.
-  // TODO(mbm): handle Call and Redo trace events
-  var maybe_next := trace_expect(trace, Unify);
-  if maybe_next.Err? {
-    return Err;
-  }
-  var u := maybe_next.val.0;
-  var trace := maybe_next.val.1;
-
-  // Unify port tells us which rule we are applying.
-  if u.i >= |rs| {
-    print "bad rule index\n";
-    return Err;
-  }
-  var r := rs[u.i];
-
-  // Expect to see traces for the rule body.
-  // NOTE: fragile assumption that the trace visits the rule body in the same order
-  var s: Subst := map[];
-  var args: seq<Thm> := [];
-  var i := 0;
-  while i < |r.body|
-    invariant forall j :: 0 <= j < |args| ==> args[j].wf(rs)
-  {
-    var subgoal := r.body[i];
-    var res := trace_call(rs, subgoal, trace, bound-1);
-    match res {
-      case Ok((m, rest)) => {
-        var maybe_subst := merge_subst(s, m.s);
-        match maybe_subst {
-          case Ok(subst) => s := subst;
-          case Err => {
-            print "failed to merge substitutions\n";
-            return Err;
-          }
-        }
-        args := args + [m.thm];
-        trace := rest;
-      }
-      case Err => {
-        print "failed subgoal trace\n";
-        return Err;
-      }
-    }
-    i := i+1;
-  }
-
-  // Exit.
-  // TODO(mbm): handle Fail and Redo
-  if |trace| == 0 {
-    print "empty trace\n";
-    return Err;
-  }
-
-  var exit := trace[0];
-  trace := trace[1..];
-  if exit.port != Exit {
-    print "unexpected trace port\n";
-    return Err;
-  }
-
-  if !exit.prop.concrete() {
-    print "expect concrete exit\n";
-    return Err;
-  }
-
-  // Unify exit with goal.
-  print "unify: g=", g, " exit=", exit.prop, "\n";
-  var goal_subst: Subst;
-  var maybe_subst := unify(g, exit.prop);
-  match maybe_subst {
-    case Ok(subst) => {
-      goal_subst := subst;
-    }
-    case Err => {
-      print "failed to unify with exit\n";
-      return Err;
-    }
-  }
-
-  var maybe_merged := merge_subst(s, goal_subst);
-  match maybe_merged {
-    case Ok(merged) => s := merged;
-    case Err => {
-      print "failed to merge substitution\n";
-      return Err;
-    }
-  }
-
-  // Deduce theorem.
-  print "mk_thm: i=", u.i, " s=", s, " args=", args, "\n";
-  var maybe_thm := mk_thm(rs, u.i, s, args);
-  match maybe_thm {
-    // TODO(mbm): trim down the subst?
-    case Ok(thm) => {
-      print "mk_thm: success\n";
-      return Ok((Match(goal_subst, thm), trace));
-    }
-    case Err => {
-      print "failed to deduce thm\n";
-      return Err;
-    }
-  }
-}
-
-method run_trace_reconstruction() {
-  var rs := connectivity_rules();
-  var trace := connectivity_trace();
-  var g := trace[0].prop;
-  var res := trace_call(rs, g, trace, 0x1000_0000_0000);
-  match res {
-    case Ok(thm) => print "ok\n";
-    case Err => print "FAIL\n";
-  }
-}
-
-*/

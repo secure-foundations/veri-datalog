@@ -17,7 +17,7 @@ port
   ;
 
 integer
-  : numeral=Int
+  : numeral=Nat
   ;
 
 /*
@@ -37,12 +37,33 @@ rule
   ;
 
 clause
-  : name=Identifier '(' term_list ')'
+  : builtin
+  | app
+  | expression
+  ;
+
+builtin
+  : name=Builtin '(' term_list ')'
+  ;
+
+app
+  : name=Identifier ( '(' term_list ')' )?
+  ;
+
+expression
+  : left=term name=Operator right=term
   ;
 
 term
-  : atom
+  : constant
   | variable
+  ;
+
+constant
+  : atom
+  | natural
+  | string
+  | list
   ;
 
 clause_list
@@ -50,11 +71,27 @@ clause_list
   ;
 
 term_list
-  : term( ',' term)*
+  : term ( ',' term)*
   ;
 
 atom
   : val=Identifier
+  ;
+
+natural
+  : numeral=Nat
+  ;
+
+string
+  : s=Str
+  ;
+
+list
+  : '[' constant_list ']'
+  ;
+
+constant_list
+  : constant ( ',' constant)*
   ;
 
 variable
@@ -65,6 +102,15 @@ variable
  * Lexer Rules
  */
 
+fragment CHARACTER
+  : ALPHANUMERIC // TODO: expand to all characters that are permitted by Prolog strings
+  | '.' | ',' | ';' | '!' | '?' | ' '
+  | '\t' | '\\t'
+  | '\n' | '\\n'
+  | '\r' | '\\r'
+  // | '"' | '\\"' // TODO: fix parsing issue with escaped double quotes and restore support
+  | '\\'
+  ;
 fragment ALPHANUMERIC: ALPHA | DIGIT ;
 fragment ALPHA: '_' | SMALL_LETTER | CAPITAL_LETTER ;
 fragment LEADER: '_' | CAPITAL_LETTER;
@@ -76,20 +122,43 @@ Port
   : 'call' | 'redo' | 'unify' | 'exit' | 'fail'
   ;
 
+Builtin
+  : 'split_string'
+  | 'sub_string'
+  | 'string_lower'
+  | 'string_chars'
+  | 'length'
+  | 'lists:member' | 'member'
+  | 'lists:reverse' | 'reverse'
+  | 'lists:nth1' | 'nth1'
+  ;
+
 Identifier
 	: SMALL_LETTER (Nondigit | Digit)*
 	;
+
+Operator
+  : '=' | '=<' | '>=' | '\\=' | '=\\=' | '<' | '>' | '=='
+  ;
 
 VarName
   : LEADER (Nondigit | Digit)*
   ;
 
-Int
-	: ('-')? Digit+
-	;
+// Int
+// 	: ('-')? Digit+
+// 	;
+
+Nat
+  : Digit+
+  ;
+
+Str
+  : '"' CHARACTER* '"' 
+  ;
 
 fragment Nondigit
-	: [a-zA-Z]
+	: [a-zA-Z] | '_'
 	;
 
 fragment Digit
